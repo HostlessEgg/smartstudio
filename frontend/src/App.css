@@ -1,0 +1,25 @@
+.App {
+  min-height: 100vh;
+}
+
+/* Estilos adicionales para componentes */
+.course-card {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.course-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.lesson-item {
+  transition: background-color 0.2s ease;
+}
+
+.lesson-item:hover {
+  background-color: #f9fafb;
+}
+
+.progress-bar {
+  transition: width 0.5s ease-in-out;
+}

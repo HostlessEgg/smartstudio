@@ -1,0 +1,26 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+import { auth } from './middleware/auth.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import authRoutes from './routes/authRoutes.js';
+
+const app = express();
+
+app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+app.use(helmet());
+app.use(express.json());
+app.use(morgan('dev'));
+
+app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 30 }));
+app.use('/api/auth', authRoutes);
+
+app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
+app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+app.use(errorHandler);
+
+export default app;
