@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import authRoutes from './routes/authRoutes.js';
 import courseStructureRoutes from './routes/courseStructureRoutes.js';
 import enrollmentRoutes from './routes/enrollmentRoutes.js';
+import progressRoutes from './routes/progressRoutes.js';
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api/auth', authRoutes);
 
 app.use('/api', courseStructureRoutes);
 app.use('/api', enrollmentRoutes);
+app.use('/api', progressRoutes);
 
 app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
