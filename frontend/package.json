@@ -15,11 +15,7 @@
     "react-router-dom": "^6.15.0"
   },
   "optionalDependencies": {
-    "@fullcalendar/core": "^6.1.8",
-    "@fullcalendar/daygrid": "^6.1.19",
-    "@fullcalendar/interaction": "^6.1.19",
-    "@fullcalendar/react": "^6.1.19",
-    "@fullcalendar/timegrid": "^6.1.19"
+    "@fullcalendar/core": "6.1.19"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.3",
