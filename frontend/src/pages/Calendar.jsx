@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from '../components/Toast';
+import FullCalendarWrapper from '../components/FullCalendarWrapper';
 
 export default function CalendarPage() {
   const { user } = useAuth();
@@ -75,6 +76,8 @@ export default function CalendarPage() {
       }
     })();
   }, []);
+
+  const supportsFullCalendar = typeof window !== 'undefined' && !!window.FullCalendar;
 
   // Persist filters to localStorage
   useEffect(() => {
@@ -191,36 +194,54 @@ export default function CalendarPage() {
 
       <div>
         <p className="mb-2 text-sm text-gray-600">Lista de asignaciones:</p>
-        <ul className="space-y-2">
-          {events
-            .filter(ev => {
-              if (filters.grade && String(ev.extendedProps?.grade_id) !== String(filters.grade)) return false;
-              if (filters.subject && String(ev.extendedProps?.subject_id) !== String(filters.subject)) return false;
-              if (filters.q) {
-                const q = filters.q.toLowerCase();
-                if (!((ev.title || '').toLowerCase().includes(q) || (ev.extendedProps?.description || '').toLowerCase().includes(q))) return false;
-              }
-              return true;
-            })
-            .slice((page - 1) * pageSize, page * pageSize)
-            .map(ev => (
-              <li key={ev.id} className="p-2 border rounded flex items-start justify-between">
-                <div>
-                  <div className="font-semibold">{ev.title}</div>
-                  <div className="text-sm text-gray-600">{new Date(ev.start).toLocaleString()} {ev.end ? `- ${new Date(ev.end).toLocaleString()}` : ''}</div>
-                  <div className="mt-1 text-sm">{ev.extendedProps?.description}</div>
-                </div>
-                <div className="flex flex-col gap-2 ml-4">
-                  {(user && (user.role === 'teacher' || user.role === 'admin')) && (
-                    <>
-                      <button onClick={() => handleEdit(ev)} className="px-2 py-1 bg-yellow-300 rounded">Editar</button>
-                      <button onClick={() => handleDelete(ev.id)} className="px-2 py-1 bg-red-500 text-white rounded">Eliminar</button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-        </ul>
+        {supportsFullCalendar ? (
+          <div className="border rounded">
+            <FullCalendarWrapper
+              events={events}
+              onDateSelect={(info) => {
+                // map FullCalendar select info to our form
+                setForm({ ...form, start_at: info.startStr || info.start?.toISOString?.(), end_at: info.endStr || '' });
+                setShowForm(true);
+              }}
+              onEventClick={(info) => {
+                // find event in our list and open edit
+                const ev = events.find(e => String(e.id) === String(info.event.id));
+                if (ev) handleEdit(ev);
+              }}
+            />
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {events
+              .filter(ev => {
+                if (filters.grade && String(ev.extendedProps?.grade_id) !== String(filters.grade)) return false;
+                if (filters.subject && String(ev.extendedProps?.subject_id) !== String(filters.subject)) return false;
+                if (filters.q) {
+                  const q = filters.q.toLowerCase();
+                  if (!((ev.title || '').toLowerCase().includes(q) || (ev.extendedProps?.description || '').toLowerCase().includes(q))) return false;
+                }
+                return true;
+              })
+              .slice((page - 1) * pageSize, page * pageSize)
+              .map(ev => (
+                <li key={ev.id} className="p-2 border rounded flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold">{ev.title}</div>
+                    <div className="text-sm text-gray-600">{new Date(ev.start).toLocaleString()} {ev.end ? `- ${new Date(ev.end).toLocaleString()}` : ''}</div>
+                    <div className="mt-1 text-sm">{ev.extendedProps?.description}</div>
+                  </div>
+                  <div className="flex flex-col gap-2 ml-4">
+                    {(user && (user.role === 'teacher' || user.role === 'admin')) && (
+                      <>
+                        <button onClick={() => handleEdit(ev)} className="px-2 py-1 bg-yellow-300 rounded">Editar</button>
+                        <button onClick={() => handleDelete(ev.id)} className="px-2 py-1 bg-red-500 text-white rounded">Eliminar</button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+          </ul>
+        )}
 
         <div className="mt-3 flex items-center gap-2">
           <button onClick={() => setPage(p => Math.max(1, p - 1))} className="px-2 py-1 border rounded">Anterior</button>
