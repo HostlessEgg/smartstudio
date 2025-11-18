@@ -105,6 +105,22 @@ const authorizeRoles = (allowedRoles = []) => (req, res, next) => {
     next();
 };
 
+// Helper: registrar auditoría
+const logAudit = async (req, action, entity = null, entityId = null, details = null) => {
+    try {
+        const connection = await mysql.createConnection(dbConfig);
+        const userId = req.user ? req.user.userId : null;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
+        await connection.execute(
+            'INSERT INTO audits (user_id, action, entity, entity_id, details, ip) VALUES (?, ?, ?, ?, ?, ?)',
+            [userId, action, entity, entityId ? String(entityId) : null, details ? JSON.stringify(details) : null, ip]
+        );
+        await connection.end();
+    } catch (err) {
+        console.error('Error registrando auditoría:', err);
+    }
+};
+
 // RUTAS DE AUTENTICACIÓN
 
 app.post('/api/auth/register',
@@ -223,6 +239,103 @@ app.post('/api/auth/login', [
     }
 });
 
+// ---------- ENDPOINTS DE USUARIOS / ROLES ----------
+
+// Listar usuarios (filtros: role, tag, q=name|email) - solo Admin/Instructor
+app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const { role, tag, q } = req.query;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        let sql = 'SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users WHERE 1=1';
+        const params = [];
+        if (role) { sql += ' AND role = ?'; params.push(role); }
+        if (tag) { sql += ' AND JSON_CONTAINS(tags, ?)'; params.push(JSON.stringify(tag)); }
+        if (q) { sql += ' AND (name LIKE ? OR email LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+        sql += ' ORDER BY created_at DESC';
+
+        const [rows] = await connection.execute(sql, params);
+        await connection.end();
+        res.json(rows);
+    } catch (err) {
+        await connection.end();
+        console.error('Error listando usuarios:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Obtener usuario por id (propio o Admin/Instructor)
+app.get('/api/users/:id', authenticateToken, async (req, res) => {
+    const id = Number(req.params.id);
+    const requester = req.user;
+    if (!requester) return res.status(401).json({ error: 'No autorizado' });
+
+    // Permite ver si es el propio recurso o si es instructor/admin
+    if (requester.userId !== id && !['teacher','admin'].includes(requester.role)) {
+        return res.status(403).json({ error: 'Permisos insuficientes' });
+    }
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute('SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users WHERE id = ?', [id]);
+        await connection.end();
+        if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+        res.json(rows[0]);
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo usuario:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Actualizar perfil (propio o Admin)
+app.put('/api/users/:id', authenticateToken, async (req, res) => {
+    const id = Number(req.params.id);
+    const requester = req.user;
+    if (!requester) return res.status(401).json({ error: 'No autorizado' });
+
+    if (requester.userId !== id && requester.role !== 'admin') {
+        return res.status(403).json({ error: 'Permisos insuficientes' });
+    }
+
+    const { name, occupation, organization, avatar_url, tags } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const tagsVal = Array.isArray(tags) ? JSON.stringify(tags) : null;
+        await connection.execute(
+            'UPDATE users SET name = ?, occupation = ?, organization = ?, avatar_url = ?, tags = ? WHERE id = ?',
+            [name || null, occupation || null, organization || null, avatar_url || null, tagsVal, id]
+        );
+        await logAudit(req, 'update_user', 'user', id, { name, occupation, organization, tags });
+        await connection.end();
+        res.json({ message: 'Usuario actualizado' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error actualizando usuario:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Asignar/setear role a un usuario (solo Admin)
+app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ check('role').isIn(['student','teacher','admin','guest']) ], async (req, res) => {
+    const id = Number(req.params.id);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const { role } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        await connection.execute('UPDATE users SET role = ? WHERE id = ?', [role, id]);
+        await logAudit(req, 'set_user_role', 'user', id, { role });
+        await connection.end();
+        res.json({ message: `Role actualizado a ${role}` });
+    } catch (err) {
+        await connection.end();
+        console.error('Error actualizando role:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+
 // RUTAS DE CURSOS
 app.get('/api/courses', async (req, res) => {
     try {
@@ -285,6 +398,89 @@ app.get('/api/courses/:id', async (req, res) => {
     } catch (error) {
         console.error('Error obteniendo curso:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Crear un curso (teacher/admin)
+app.post('/api/courses', authenticateToken, authorizeRoles(['teacher','admin']), [
+    check('title').isString().notEmpty().withMessage('title requerido')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const { title, description, category, level, instructor_id } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [result] = await connection.execute(
+            'INSERT INTO courses (title, description, category, level, instructor_id, state) VALUES (?, ?, ?, ?, ?, ?)',
+            [title, description || null, category || null, level || 'beginner', instructor_id || req.user.userId, 'draft']
+        );
+        await logAudit(req, 'create_course', 'course', result.insertId, { title });
+        await connection.end();
+        res.status(201).json({ message: 'Curso creado', id: result.insertId });
+    } catch (err) {
+        await connection.end();
+        console.error('Error creando curso:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Editar curso (teacher/admin)
+app.put('/api/courses/:id', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const id = req.params.id;
+    const { title, description, category, level } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        await connection.execute(
+            'UPDATE courses SET title = ?, description = ?, category = ?, level = ?, updated_at = NOW() WHERE id = ?',
+            [title, description || null, category || null, level || 'beginner', id]
+        );
+        await logAudit(req, 'update_course', 'course', id, { title });
+        await connection.end();
+        res.json({ message: 'Curso actualizado' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error actualizando curso:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Publicar / cambiar estado de curso (teacher/admin)
+app.post('/api/courses/:id/state', authenticateToken, authorizeRoles(['teacher','admin']), [
+    check('state').isIn(['draft','published','archived']).withMessage('state inválido')
+], async (req, res) => {
+    const id = req.params.id;
+    const { state } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        await connection.execute('UPDATE courses SET state = ?, updated_at = NOW() WHERE id = ?', [state, id]);
+        await logAudit(req, 'change_course_state', 'course', id, { state });
+        await connection.end();
+        res.json({ message: `Curso actualizado a estado ${state}` });
+    } catch (err) {
+        await connection.end();
+        console.error('Error cambiando estado del curso:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Inscribir usuario a un curso (simple)
+app.post('/api/enrollments', authenticateToken, authorizeRoles(['teacher','admin']), [
+    check('student_id').isInt(),
+    check('course_id').isInt()
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const { student_id, course_id } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [result] = await connection.execute('INSERT IGNORE INTO enrollments (student_id, course_id) VALUES (?, ?)', [student_id, course_id]);
+        await logAudit(req, 'enroll_user', 'enrollment', result.insertId || null, { student_id, course_id });
+        await connection.end();
+        res.status(201).json({ message: 'Usuario inscrito', id: result.insertId });
+    } catch (err) {
+        await connection.end();
+        console.error('Error inscribiendo usuario:', err);
+        res.status(500).json({ error: 'Error interno' });
     }
 });
 
@@ -809,6 +1005,75 @@ app.post('/api/forums/threads/:id/posts',
 // Ruta de salud
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SMARTSTUDIO LMS API funcionando' });
+});
+
+// Cohortes: crear
+app.post('/api/cohorts', authenticateToken, authorizeRoles(['teacher','admin']), [
+    check('name').isString().notEmpty(),
+    check('course_id').isInt()
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const { name, course_id, start_date, end_date, rules, max_capacity, visibility } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [result] = await connection.execute(
+            'INSERT INTO cohorts (name, course_id, start_date, end_date, rules, max_capacity, visibility) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [name, course_id, start_date || null, end_date || null, rules ? JSON.stringify(rules) : null, max_capacity || null, visibility || 'private']
+        );
+        await logAudit(req, 'create_cohort', 'cohort', result.insertId, { name, course_id });
+        await connection.end();
+        res.status(201).json({ message: 'Cohorte creada', id: result.insertId });
+    } catch (err) {
+        await connection.end();
+        console.error('Error creando cohorte:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Importar miembros a cohorte desde CSV (csv con columna email o user_id)
+app.post('/api/cohorts/:id/import-members', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const cohortId = req.params.id;
+    const { csv } = req.body; // expects CSV text
+    if (!csv) return res.status(400).json({ error: 'csv requerido en body' });
+    const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const connection = await mysql.createConnection(dbConfig);
+    const report = { imported: 0, skipped: 0, errors: [] };
+    try {
+        for (const line of lines) {
+            const parts = line.split(',').map(p => p.trim());
+            try {
+                if (/^\d+$/.test(parts[0])) {
+                    const userId = Number(parts[0]);
+                    await connection.execute('INSERT IGNORE INTO cohort_members (cohort_id, user_id) VALUES (?, ?)', [cohortId, userId]);
+                    report.imported++;
+                } else if (parts[0].includes('@')) {
+                    const email = parts[0];
+                    const [rows] = await connection.execute('SELECT id FROM users WHERE email = ?', [email]);
+                    if (rows.length > 0) {
+                        const uid = rows[0].id;
+                        await connection.execute('INSERT IGNORE INTO cohort_members (cohort_id, user_id) VALUES (?, ?)', [cohortId, uid]);
+                        report.imported++;
+                    } else {
+                        report.errors.push({ line, error: 'user not found' });
+                        report.skipped++;
+                    }
+                } else {
+                    report.errors.push({ line, error: 'invalid format' });
+                    report.skipped++;
+                }
+            } catch (inner) {
+                report.errors.push({ line, error: inner.message });
+            }
+        }
+        await logAudit(req, 'import_cohort_members', 'cohort', cohortId, { report });
+        await connection.end();
+        res.json(report);
+    } catch (err) {
+        await connection.end();
+        console.error('Error importando miembros:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
 });
 
 // Inicializar servidor
