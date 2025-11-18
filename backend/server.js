@@ -244,18 +244,42 @@ app.post('/api/auth/login', [
 // Listar usuarios (filtros: role, tag, q=name|email) - solo Admin/Instructor
 app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const { role, tag, q } = req.query;
+    // pagination
+    let page = parseInt(req.query.page || '1', 10);
+    let per_page = parseInt(req.query.per_page || '20', 10);
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(per_page) || per_page < 1) per_page = 20;
+    per_page = Math.min(per_page, 100);
+
+    const offset = (page - 1) * per_page;
+
     const connection = await mysql.createConnection(dbConfig);
     try {
-        let sql = 'SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users WHERE 1=1';
+        // Build base WHERE clause
+        let where = ' WHERE 1=1';
         const params = [];
-        if (role) { sql += ' AND role = ?'; params.push(role); }
-        if (tag) { sql += ' AND JSON_CONTAINS(tags, ?)'; params.push(JSON.stringify(tag)); }
-        if (q) { sql += ' AND (name LIKE ? OR email LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
-        sql += ' ORDER BY created_at DESC';
+        if (role) { where += ' AND role = ?'; params.push(role); }
+        if (tag) { where += ' AND JSON_CONTAINS(tags, ?)'; params.push(JSON.stringify(tag)); }
+        if (q) { where += ' AND (name LIKE ? OR email LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
 
-        const [rows] = await connection.execute(sql, params);
+        // Total count
+        const countSql = `SELECT COUNT(*) as total FROM users ${where}`;
+        const [countRows] = await connection.execute(countSql, params);
+        const total = countRows && countRows[0] ? Number(countRows[0].total || 0) : 0;
+        const total_pages = Math.max(1, Math.ceil(total / per_page));
+
+        // Data page
+        const dataSql = `SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+        const dataParams = params.slice();
+        dataParams.push(per_page, offset);
+
+        const [rows] = await connection.execute(dataSql, dataParams);
         await connection.end();
-        res.json(rows);
+
+        res.json({
+            meta: { total, total_pages, page, per_page },
+            data: rows
+        });
     } catch (err) {
         await connection.end();
         console.error('Error listando usuarios:', err);
