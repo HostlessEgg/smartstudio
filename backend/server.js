@@ -362,19 +362,35 @@ app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ 
 
 // RUTAS DE CURSOS
 app.get('/api/courses', async (req, res) => {
+    // soporta filtros básicos y paginación
     try {
-        const connection = await mysql.createConnection(dbConfig);
-        
-        const [courses] = await connection.execute(`
-            SELECT c.*, u.name as instructor_name 
-            FROM courses c 
-            LEFT JOIN users u ON c.instructor_id = u.id 
-            WHERE c.is_published = true
-            ORDER BY c.created_at DESC
-        `);
+        const { category, q } = req.query;
+        let page = parseInt(req.query.page || '1', 10);
+        let per_page = parseInt(req.query.per_page || '20', 10);
+        if (isNaN(page) || page < 1) page = 1;
+        if (isNaN(per_page) || per_page < 1) per_page = 20;
+        per_page = Math.min(per_page, 100);
+        const offset = (page - 1) * per_page;
 
-        res.json(courses);
+        const connection = await mysql.createConnection(dbConfig);
+
+        let where = ' WHERE c.is_published = true';
+        const params = [];
+        if (category) { where += ' AND c.category = ?'; params.push(category); }
+        if (q) { where += ' AND (c.title LIKE ? OR c.description LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+
+        // total
+        const [countRows] = await connection.execute(`SELECT COUNT(*) as total FROM courses c ${where}`, params);
+        const total = countRows && countRows[0] ? Number(countRows[0].total || 0) : 0;
+        const total_pages = Math.max(1, Math.ceil(total / per_page));
+
+        // Some MySQL drivers may not accept placeholders for LIMIT/OFFSET reliably,
+        // so interpolate the numeric values directly (they are validated above).
+        const dataSql = `SELECT c.*, u.name as instructor_name FROM courses c LEFT JOIN users u ON c.instructor_id = u.id ${where} ORDER BY c.created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
+        const [courses] = await connection.execute(dataSql, params);
         await connection.end();
+
+        res.json({ meta: { total, total_pages, page, per_page }, data: courses });
     } catch (error) {
         console.error('Error obteniendo cursos:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
