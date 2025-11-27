@@ -7,6 +7,13 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { check, validationResult } from 'express-validator';
+import path from 'path';
+import fs from 'fs';
+
+// Optional AWS S3 presign imports
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import multer from 'multer';
 
 dotenv.config();
 
@@ -19,40 +26,60 @@ app.use(express.json());
 // Security headers
 app.use(helmet());
 
-// Rate limiting (global)
+// Rate limiting (global) - can be disabled via env var to avoid flakiness during automated tests
 const GLOBAL_RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
 const GLOBAL_RATE_LIMIT_MAX = process.env.GLOBAL_RATE_LIMIT_MAX ? Number(process.env.GLOBAL_RATE_LIMIT_MAX) : 100; // default prod-ish
-const apiLimiter = rateLimit({
-    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-    max: GLOBAL_RATE_LIMIT_MAX,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
+let apiLimiter;
+let authLimiter;
+let quizSubmitLimiter;
+let forumPostLimiter;
+
+const disableRateLimits = (
+    process.env.RATE_LIMITS_DISABLED === '1' ||
+    String(process.env.RATE_LIMITS_DISABLED).toLowerCase() === 'true' ||
+    process.env.NODE_ENV === 'test'
+);
+
+if (disableRateLimits) {
+    // no-op middlewares when disabled (tests or explicit env var)
+    apiLimiter = (req, res, next) => next();
+    authLimiter = (req, res, next) => next();
+    quizSubmitLimiter = (req, res, next) => next();
+    forumPostLimiter = (req, res, next) => next();
+} else {
+    apiLimiter = rateLimit({
+        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+        max: GLOBAL_RATE_LIMIT_MAX,
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+
+    // Stricter limiter for auth-related endpoints
+    authLimiter = rateLimit({
+        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+        max: process.env.AUTH_RATE_LIMIT_MAX ? Number(process.env.AUTH_RATE_LIMIT_MAX) : 10,
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+
+    // Limiter for quiz submissions to prevent spam
+    quizSubmitLimiter = rateLimit({
+        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+        max: process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX ? Number(process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX) : 30,
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+
+    // Limiter for forum posts to avoid spam
+    forumPostLimiter = rateLimit({
+        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+        max: process.env.FORUM_POST_RATE_LIMIT_MAX ? Number(process.env.FORUM_POST_RATE_LIMIT_MAX) : 30,
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+}
+
 app.use(apiLimiter);
-
-// Stricter limiter for auth-related endpoints
-const authLimiter = rateLimit({
-    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-    max: process.env.AUTH_RATE_LIMIT_MAX ? Number(process.env.AUTH_RATE_LIMIT_MAX) : 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
-// Limiter for quiz submissions to prevent spam
-const quizSubmitLimiter = rateLimit({
-    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-    max: process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX ? Number(process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX) : 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
-// Limiter for forum posts to avoid spam
-const forumPostLimiter = rateLimit({
-    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-    max: process.env.FORUM_POST_RATE_LIMIT_MAX ? Number(process.env.FORUM_POST_RATE_LIMIT_MAX) : 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
 
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
@@ -60,6 +87,24 @@ const dbConfig = {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'smartstudio_lms'
 };
+
+// uploads folder for local fallback
+const uploadsDir = path.join(process.cwd(), 'backend', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve uploads statically
+app.use('/uploads', express.static(uploadsDir));
+
+// Multer for fallback multipart uploads
+const upload = multer({ dest: uploadsDir });
+
+// Configure S3 client if env vars provided
+let s3Client = null;
+if (process.env.S3_BUCKET && process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    s3Client = new S3Client({ region: process.env.AWS_REGION });
+}
 
 // Crear conexión a la base de datos
 async function createDatabase() {
@@ -397,6 +442,41 @@ app.get('/api/courses', async (req, res) => {
     }
 });
 
+// Get courses for current user: enrolled (student) or own courses (teacher/admin)
+app.get('/api/my-courses', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const role = req.user.role;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        let rows;
+        if (role === 'student') {
+            const [r] = await connection.execute(
+                `SELECT c.*, u.name as instructor_name
+                 FROM courses c
+                 JOIN enrollments e ON e.course_id = c.id
+                 LEFT JOIN users u ON c.instructor_id = u.id
+                 WHERE e.student_id = ?`, [userId]
+            );
+            rows = r;
+        } else if (role === 'teacher') {
+            const [r] = await connection.execute(
+                `SELECT c.*, u.name as instructor_name FROM courses c LEFT JOIN users u ON c.instructor_id = u.id WHERE c.instructor_id = ?`, [userId]
+            );
+            rows = r;
+        } else {
+            // admin sees all courses
+            const [r] = await connection.execute(`SELECT c.*, u.name as instructor_name FROM courses c LEFT JOIN users u ON c.instructor_id = u.id`);
+            rows = r;
+        }
+        await connection.end();
+        res.json(rows);
+    } catch (err) {
+        await connection.end();
+        console.error('Error getting my courses:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 app.get('/api/courses/:id', async (req, res) => {
     try {
         const connection = await mysql.createConnection(dbConfig);
@@ -447,19 +527,86 @@ app.post('/api/courses', authenticateToken, authorizeRoles(['teacher','admin']),
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { title, description, category, level, instructor_id } = req.body;
+    const { title, description, category, level, instructor_id, modules } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     try {
-        const [result] = await connection.execute(
+        // Basic validation for nested structure
+        if (modules && !Array.isArray(modules)) {
+            await connection.end();
+            return res.status(400).json({ error: 'modules debe ser un array' });
+        }
+
+        // start transaction
+        await connection.beginTransaction();
+
+        const [courseResult] = await connection.execute(
             'INSERT INTO courses (title, description, category, level, instructor_id, state) VALUES (?, ?, ?, ?, ?, ?)',
             [title, description || null, category || null, level || 'beginner', instructor_id || req.user.userId, 'draft']
         );
-        await logAudit(req, 'create_course', 'course', result.insertId, { title });
+        const courseId = courseResult.insertId;
+
+        const insertedModules = [];
+        if (Array.isArray(modules)) {
+            const allowedLessonTypes = new Set(['video','text','quiz','pdf']);
+            for (let mi = 0; mi < modules.length; mi++) {
+                const m = modules[mi] || {};
+                if (!m.title || String(m.title).trim() === '') {
+                    await connection.rollback();
+                    await connection.end();
+                    return res.status(400).json({ error: `Module ${mi + 1} requires title` });
+                }
+
+                const [mRes] = await connection.execute(
+                    'INSERT INTO modules (course_id, title, description, order_index) VALUES (?, ?, ?, ?)',
+                    [courseId, m.title, m.description || null, m.order_index || 0]
+                );
+                const moduleId = mRes.insertId;
+
+                const insertedLessons = [];
+                if (m.lessons && !Array.isArray(m.lessons)) {
+                    await connection.rollback();
+                    await connection.end();
+                    return res.status(400).json({ error: `lessons for module ${m.title} must be an array` });
+                }
+
+                if (Array.isArray(m.lessons)) {
+                    for (let li = 0; li < m.lessons.length; li++) {
+                        const lesson = m.lessons[li] || {};
+                        if (!lesson.title || String(lesson.title).trim() === '') {
+                            await connection.rollback();
+                            await connection.end();
+                            return res.status(400).json({ error: `Lesson ${li + 1} in module ${m.title} requires title` });
+                        }
+                        if (lesson.lesson_type && !allowedLessonTypes.has(lesson.lesson_type)) {
+                            await connection.rollback();
+                            await connection.end();
+                            return res.status(400).json({ error: `Invalid lesson_type for lesson ${lesson.title}` });
+                        }
+
+                        const [lRes] = await connection.execute(
+                            'INSERT INTO lessons (module_id, title, content, lesson_type, video_url, file_url, order_index, duration_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                            [moduleId, lesson.title, lesson.content || null, lesson.lesson_type || 'text', lesson.video_url || null, lesson.file_url || null, lesson.order_index || 0, lesson.duration_minutes || 0]
+                        );
+                        insertedLessons.push({ id: lRes.insertId, title: lesson.title, lesson_type: lesson.lesson_type || 'text' });
+                    }
+                }
+
+                insertedModules.push({ id: moduleId, title: m.title, lessons: insertedLessons });
+            }
+        }
+
+        await connection.commit();
+
+        await logAudit(req, 'create_course', 'course', courseId, { title, modulesCount: insertedModules.length });
         await connection.end();
-        res.status(201).json({ message: 'Curso creado', id: result.insertId });
+
+        // Build response shape
+        const courseResponse = { id: courseId, title, description: description || null, category: category || null, level: level || 'beginner', modules: insertedModules };
+        res.status(201).json({ course: courseResponse });
     } catch (err) {
+        try { await connection.rollback(); } catch (e) {}
         await connection.end();
-        console.error('Error creando curso:', err);
+        console.error('Error creando curso (nested):', err);
         res.status(500).json({ error: 'Error interno' });
     }
 });
@@ -524,6 +671,57 @@ app.post('/api/enrollments', authenticateToken, authorizeRoles(['teacher','admin
     }
 });
 
+// Student self-enroll to a course
+app.post('/api/courses/:id/enroll', authenticateToken, async (req, res) => {
+    const courseId = Number(req.params.id);
+    const studentId = req.user.userId;
+    if (!courseId || Number.isNaN(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        // verify course exists
+        const [courses] = await connection.execute('SELECT id FROM courses WHERE id = ?', [courseId]);
+        if (courses.length === 0) {
+            await connection.end();
+            return res.status(404).json({ error: 'Course not found' });
+        }
+
+        // check existing enrollment
+        const [existing] = await connection.execute('SELECT id FROM enrollments WHERE student_id = ? AND course_id = ?', [studentId, courseId]);
+        if (existing.length > 0) {
+            await connection.end();
+            return res.status(409).json({ message: 'Already enrolled', enrolled: true });
+        }
+
+        const [ins] = await connection.execute('INSERT INTO enrollments (student_id, course_id) VALUES (?, ?)', [studentId, courseId]);
+        await logAudit(req, 'self_enroll', 'enrollment', ins.insertId || null, { studentId, courseId });
+        await connection.end();
+        res.json({ message: 'Enrolled successfully', enrolled: true });
+    } catch (err) {
+        await connection.end();
+        console.error('Error enrolling student:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Check if current user is enrolled in course
+app.get('/api/courses/:id/enrolled', authenticateToken, async (req, res) => {
+    const courseId = Number(req.params.id);
+    const studentId = req.user.userId;
+    if (!courseId || Number.isNaN(courseId)) return res.status(400).json({ error: 'Invalid course id' });
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute('SELECT id FROM enrollments WHERE student_id = ? AND course_id = ?', [studentId, courseId]);
+        await connection.end();
+        res.json({ enrolled: rows.length > 0 });
+    } catch (err) {
+        await connection.end();
+        console.error('Error checking enrollment:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Endpoint optimizado para devolver todas las lecciones con contexto (curso/módulo)
 app.get('/api/lessons', async (req, res) => {
     try {
@@ -561,39 +759,83 @@ app.get('/api/curriculum', async (req, res) => {
             ORDER BY lv.name, g.name
         `);
 
-        const result = [];
+        // Normalize into an English-keyed structure: { levels: [ { id,name, grades: [ { id,name,total_hours,total_sections, subjects: [...] } ] } ] }
         const levelsMap = new Map();
-
         for (const r of rows) {
             if (!levelsMap.has(r.level_id)) {
-                const levelObj = { nivel: r.level_name, grados: {} };
-                levelsMap.set(r.level_id, levelObj);
-                result.push(levelObj);
+                levelsMap.set(r.level_id, { id: r.level_id, name: r.level_name, grades: new Map() });
             }
             const levelObj = levelsMap.get(r.level_id);
 
-            if (!levelObj.grados[r.grade_name]) {
-                levelObj.grados[r.grade_name] = {
-                    total_horas: r.total_hours,
-                    total_secciones: r.total_sections,
-                    asignaturas: {}
-                };
+            if (!levelObj.grades.has(r.grade_id)) {
+                levelObj.grades.set(r.grade_id, {
+                    id: r.grade_id,
+                    name: r.grade_name,
+                    total_hours: r.total_hours,
+                    total_sections: r.total_sections,
+                    subjects: []
+                });
             }
 
-            levelObj.grados[r.grade_name].asignaturas[r.subject_name] = {
-                horas: r.subject_hours,
-                secciones: r.subject_sections
-            };
+            const gradeObj = levelObj.grades.get(r.grade_id);
+            gradeObj.subjects.push({ id: r.subject_id, name: r.subject_name, hours: r.subject_hours, sections: r.subject_sections });
+        }
+
+        const levels = [];
+        for (const [, lvl] of levelsMap) {
+            const grades = [];
+            for (const [, g] of lvl.grades) grades.push(g);
+            levels.push({ id: lvl.id, name: lvl.name, grades });
         }
 
         await connection.end();
-        res.json(result);
+        res.json({ levels });
     } catch (err) {
         await connection.end();
         console.error('Error obteniendo curriculum:', err);
         res.status(500).json({ error: 'Error interno' });
     }
 });
+
+    // Endpoint to generate presigned upload URL for S3 (or fallback info)
+    app.post('/api/uploads/presign', authenticateToken, async (req, res) => {
+        const { filename, contentType } = req.body || {};
+        if (!filename) return res.status(400).json({ error: 'filename requerido' });
+
+        // If S3 configured, create presigned PUT URL
+        if (s3Client) {
+            try {
+                const bucket = process.env.S3_BUCKET;
+                const region = process.env.AWS_REGION;
+                const key = `submissions/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${filename}`;
+                const putCommand = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType || 'application/octet-stream' });
+                const uploadUrl = await getSignedUrl(s3Client, putCommand, { expiresIn: 900 }); // 15 minutes
+                // public URL assuming bucket is public or uses presigned GETs; adapt if using CloudFront
+                const fileUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+                await logAudit(req, 'presign_upload', 'upload', null, { key });
+                return res.json({ uploadUrl, fileUrl, key, expiresIn: 900 });
+            } catch (err) {
+                console.error('Error generating presign URL:', err);
+                return res.status(500).json({ error: 'Error generando presigned URL' });
+            }
+        }
+
+        // Fallback: server will accept multipart upload at /api/uploads
+        return res.status(200).json({ fallback: true, uploadEndpoint: '/api/uploads' });
+    });
+
+    // Fallback endpoint to accept multipart file upload and return a local URL
+    app.post('/api/uploads', authenticateToken, upload.single('file'), async (req, res) => {
+        try {
+            if (!req.file) return res.status(400).json({ error: 'file required' });
+            const localPath = `/uploads/${req.file.filename}`;
+            await logAudit(req, 'upload_file', 'upload', null, { originalName: req.file.originalname, path: localPath });
+            res.status(201).json({ fileUrl: `${req.protocol}://${req.get('host')}${localPath}` });
+        } catch (err) {
+            console.error('Error storing uploaded file:', err);
+            res.status(500).json({ error: 'Error guardando archivo' });
+        }
+    });
 
 // ---------- ENDPOINTS PARA ASSIGNMENTS (CALENDARIO) ----------
 
@@ -670,6 +912,108 @@ app.delete('/api/assignments/:id', authenticateToken, authorizeRoles(['teacher',
         res.status(500).json({ error: 'Error interno' });
     }
 });
+
+// ---------- ENDPOINTS PARA SUBMISSIONS (ENTREGAS) ----------
+
+// Student submits an assignment (text + optional file_url)
+app.post('/api/assignments/:id/submissions', authenticateToken, async (req, res) => {
+    const assignmentId = Number(req.params.id);
+    const studentId = req.user.userId;
+    const { text_submission, file_url } = req.body;
+    if (!assignmentId || Number.isNaN(assignmentId)) return res.status(400).json({ error: 'Invalid assignment id' });
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        // verify assignment exists
+        const [assignRows] = await connection.execute('SELECT id, start_at FROM assignments WHERE id = ?', [assignmentId]);
+        if (assignRows.length === 0) {
+            await connection.end();
+            return res.status(404).json({ error: 'Assignment not found' });
+        }
+
+        const [ins] = await connection.execute(
+            'INSERT INTO submissions (assignment_id, student_id, file_url, text_submission) VALUES (?, ?, ?, ?)',
+            [assignmentId, studentId, file_url || null, text_submission || null]
+        );
+
+        await logAudit(req, 'submit_assignment', 'submission', ins.insertId, { assignmentId, studentId });
+        await connection.end();
+        res.status(201).json({ message: 'Submission created', submissionId: ins.insertId });
+    } catch (err) {
+        await connection.end();
+        console.error('Error creating submission:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Instructors: list submissions for an assignment
+app.get('/api/assignments/:id/submissions', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const assignmentId = Number(req.params.id);
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute(
+            `SELECT s.*, u.name as student_name, u.email as student_email
+             FROM submissions s
+             LEFT JOIN users u ON s.student_id = u.id
+             WHERE s.assignment_id = ? ORDER BY s.created_at DESC`,
+            [assignmentId]
+        );
+        await connection.end();
+        res.json(rows);
+    } catch (err) {
+        await connection.end();
+        console.error('Error listing submissions:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// View single submission (student can view own, teacher/admin can view any)
+app.get('/api/submissions/:id', authenticateToken, async (req, res) => {
+    const subId = Number(req.params.id);
+    const userId = req.user.userId;
+    const userRole = req.user.role;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute('SELECT * FROM submissions WHERE id = ?', [subId]);
+        if (rows.length === 0) { await connection.end(); return res.status(404).json({ error: 'Submission not found' }); }
+        const submission = rows[0];
+        if (userRole !== 'teacher' && userRole !== 'admin' && submission.student_id !== userId) {
+            await connection.end();
+            return res.status(403).json({ error: 'Permisos insuficientes' });
+        }
+        await connection.end();
+        res.json(submission);
+    } catch (err) {
+        await connection.end();
+        console.error('Error fetching submission:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Grade a submission (teacher/admin)
+app.post('/api/submissions/:id/grade', authenticateToken, authorizeRoles(['teacher','admin']), [
+    check('score').optional().isNumeric(),
+    check('feedback').optional().isString()
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const subId = Number(req.params.id);
+    const { score, feedback } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute('SELECT * FROM submissions WHERE id = ?', [subId]);
+        if (rows.length === 0) { await connection.end(); return res.status(404).json({ error: 'Submission not found' }); }
+        await connection.execute('UPDATE submissions SET score = ?, feedback = ?, updated_at = NOW() WHERE id = ?', [score || null, feedback || null, subId]);
+        await logAudit(req, 'grade_submission', 'submission', subId, { score, feedback });
+        await connection.end();
+        res.json({ message: 'Submission graded' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error grading submission:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 
 // Config endpoint (expose quiz pass threshold)
 app.get('/api/config', (req, res) => {
