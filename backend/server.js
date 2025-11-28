@@ -14,6 +14,7 @@ import fs from 'fs';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import multer from 'multer';
+import representativesRouter from './routes/representatives.js';
 
 dotenv.config();
 
@@ -96,6 +97,9 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Serve uploads statically
 app.use('/uploads', express.static(uploadsDir));
+
+// Representatives router (endpoints para solicitud/consentimiento/visualización por representante)
+app.use('/api/representatives', representativesRouter);
 
 // Multer for fallback multipart uploads
 const upload = multer({ dest: uploadsDir });

@@ -25,6 +25,10 @@ export default function CalendarPage() {
       const params = {};
       if (from) params.from = from;
       if (to) params.to = to;
+      // include filters when present
+      if (filters.grade) params.gradeId = filters.grade;
+      if (filters.subject) params.subjectId = filters.subject;
+      if (filters.q) params.q = filters.q;
       const res = await axios.get('/api/assignments', { params });
       const items = (res.data || []).map(a => ({
         id: a.id,
@@ -45,37 +49,44 @@ export default function CalendarPage() {
     fetchEvents();
     // FullCalendar dynamic loading removed in this environment to avoid dev-server
     // pre-bundling errors. We keep a simple list view of assignments instead.
-    // fetch curriculum (grades/subjects) for selectors
+    // fetch curriculum (levels->grades->subjects) for selectors
     (async () => {
       try {
         const res = await axios.get('/api/curriculum');
-        // expected shape: { grades: [...], subjects: [...] } or nested levels
         const data = res.data || {};
-        if (Array.isArray(data.grades)) {
-          setGrades(data.grades);
-        } else if (Array.isArray(data.levels)) {
-          // flatten grades from nested structure if present
-          const g = [];
-          data.levels.forEach(l => {
-            (l.grades || []).forEach(gr => g.push(gr));
+        // Expected normalized response: { levels: [ { id, name, grades: [ { id, name, subjects: [...] } ] } ] }
+        if (Array.isArray(data.levels)) {
+          // Flatten grades and subjects for simple selectors
+          const gradesList = [];
+          const subjectsList = [];
+          data.levels.forEach(level => {
+            (level.grades || []).forEach(grade => {
+              gradesList.push({ id: grade.id, name: grade.name });
+              (grade.subjects || []).forEach(sub => subjectsList.push({ id: sub.id, name: sub.name }));
+            });
           });
-          setGrades(g);
-        }
-        if (Array.isArray(data.subjects)) {
-          setSubjects(data.subjects);
-        } else if (Array.isArray(data.grades)) {
-          // derive subjects from grades list if present
-          const s = [];
-          data.grades.forEach(g => {
-            (g.subjects || []).forEach(sub => s.push(sub));
-          });
-          setSubjects(s);
+          setGrades(gradesList);
+          // de-duplicate subjects by id
+          const uniq = {};
+          subjectsList.forEach(s => { if (!uniq[s.id]) uniq[s.id] = s; });
+          setSubjects(Object.values(uniq));
+        } else {
+          // fallback: try previous formats
+          if (Array.isArray(data.grades)) setGrades(data.grades);
+          if (Array.isArray(data.subjects)) setSubjects(data.subjects);
         }
       } catch (err) {
         console.error('Error fetching curriculum', err);
       }
     })();
   }, []);
+
+  // Re-fetch events when filters change
+  useEffect(() => {
+    // reset to first page and fetch
+    setPage(1);
+    fetchEvents();
+  }, [filters]);
 
   const supportsFullCalendar = typeof window !== 'undefined' && !!window.FullCalendar;
 
@@ -96,6 +107,43 @@ export default function CalendarPage() {
   }, [filters]);
 
   useEffect(() => { setPage(1); }, [filters]);
+
+  // Modal keyboard trap and focus management
+  useEffect(() => {
+    if (!showForm) return undefined;
+    const trap = (e) => {
+      if (e.key === 'Escape') {
+        setShowForm(false);
+        return;
+      }
+      if (e.key === 'Tab') {
+        const modal = document.querySelector('.modal-content');
+        if (!modal) return;
+        const focusable = modal.querySelectorAll('a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])');
+        if (!focusable || focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+    document.addEventListener('keydown', trap);
+    // focus first input when modal opens (only once)
+    const timer = setTimeout(() => {
+      const firstInput = document.querySelector('.modal-content input, .modal-content textarea, .modal-content select');
+      if (firstInput) firstInput.focus();
+    }, 0);
+    return () => { document.removeEventListener('keydown', trap); clearTimeout(timer); };
+  }, [showForm]);
 
   const handleDateSelect = (selectInfo) => {
     setForm({ ...form, start_at: selectInfo.startStr, end_at: selectInfo.endStr });
@@ -231,6 +279,7 @@ export default function CalendarPage() {
                     <div className="mt-1 text-sm">{ev.extendedProps?.description}</div>
                   </div>
                   <div className="flex flex-col gap-2 ml-4">
+                    <a href={`/assignments/${ev.id}`} className="px-2 py-1 bg-blue-200 rounded text-sm">Ver</a>
                     {(user && (user.role === 'teacher' || user.role === 'admin')) && (
                       <>
                         <button onClick={() => handleEdit(ev)} className="px-2 py-1 bg-yellow-300 rounded">Editar</button>
@@ -293,39 +342,8 @@ export default function CalendarPage() {
         </div>
       )}
       {/* modal keyboard + focus trap handlers */}
-      {showForm && (function() {
-        // attach key handlers via effect-like immediate registration
-        const trap = (e) => {
-          if (e.key === 'Escape') {
-            setShowForm(false);
-            return;
-          }
-          if (e.key === 'Tab') {
-            const modal = document.querySelector('.modal-content');
-            if (!modal) return;
-            const focusable = modal.querySelectorAll('a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])');
-            if (!focusable || focusable.length === 0) return;
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (e.shiftKey) {
-              if (document.activeElement === first) {
-                e.preventDefault();
-                last.focus();
-              }
-            } else {
-              if (document.activeElement === last) {
-                e.preventDefault();
-                first.focus();
-              }
-            }
-          }
-        };
-        document.addEventListener('keydown', trap);
-        // focus first input when opens
-        const firstInput = document.querySelector('.modal-content input, .modal-content textarea, .modal-content select');
-        if (firstInput) firstInput.focus();
-        return () => { document.removeEventListener('keydown', trap); };
-      })()}
+      {showForm && null}
+      {/* modal keyboard + focus trap handled by effect */}
 
       {loading && <div className="mt-2">Cargando eventos...</div>}
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'info' })} />

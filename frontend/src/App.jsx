@@ -10,6 +10,8 @@ import QuizTake from './pages/QuizTake';
 import ForumList from './pages/ForumList';
 import ForumThread from './pages/ForumThread';
 import CalendarPage from './pages/Calendar';
+import AssignmentView from './pages/AssignmentView';
+import RepresentativeDashboard from './pages/RepresentativeDashboard';
 import './App.css';
 
 function ProtectedRoute({ children, allowedRoles = [] }) {
@@ -86,6 +88,16 @@ function App() {
                 <CalendarPage />
               </ProtectedRoute>
             } />
+            <Route path="/assignments/:id" element={
+              <ProtectedRoute>
+                <AssignmentView />
+              </ProtectedRoute>
+            } />
+            <Route path="/representative" element={
+              <ProtectedRoute>
+                <RepresentativeDashboard />
+              </ProtectedRoute>
+            } />
           </Routes>
         </div>
       </Router>
@@ -109,6 +121,7 @@ function AppHeader() {
           {user ? (
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-700">{user.name || user.email}</span>
+              <Link to="/representative" className="text-sm text-gray-600 hover:text-gray-900">Representante</Link>
               <button onClick={logout} className="text-sm text-red-600">Cerrar sesión</button>
             </div>
           ) : (

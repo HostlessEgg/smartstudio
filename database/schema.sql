@@ -8,8 +8,11 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    role ENUM('student', 'teacher', 'admin') DEFAULT 'student',
+    role ENUM('student', 'teacher', 'admin', 'guest') DEFAULT 'student',
     avatar_url VARCHAR(500),
+    tags JSON DEFAULT NULL,
+    occupation VARCHAR(255) DEFAULT NULL,
+    organization VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -24,7 +27,8 @@ CREATE TABLE IF NOT EXISTS courses (
     instructor_id INT,
     thumbnail_url VARCHAR(500),
     price DECIMAL(10,2) DEFAULT 0.00,
-    is_published BOOLEAN DEFAULT FALSE,
+    state ENUM('draft','published','archived') DEFAULT 'draft',
+    is_published BOOLEAN AS (state = 'published') VIRTUAL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (instructor_id) REFERENCES users(id) ON DELETE SET NULL
@@ -84,6 +88,65 @@ CREATE TABLE IF NOT EXISTS enrollments (
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
     UNIQUE KEY unique_student_course (student_id, course_id)
+);
+
+-- Cohortes y miembros de cohort
+CREATE TABLE IF NOT EXISTS cohorts (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    course_id INT NOT NULL,
+    start_date DATE DEFAULT NULL,
+    end_date DATE DEFAULT NULL,
+    rules JSON DEFAULT NULL,
+    max_capacity INT DEFAULT NULL,
+    visibility ENUM('public','private') DEFAULT 'private',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cohort_members (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    cohort_id INT NOT NULL,
+    user_id INT NOT NULL,
+    enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cohort_id) REFERENCES cohorts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_cohort_user (cohort_id, user_id)
+);
+
+-- Versionado sencillo de cursos
+CREATE TABLE IF NOT EXISTS course_versions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    course_id INT NOT NULL,
+    version_number INT NOT NULL DEFAULT 1,
+    payload JSON DEFAULT NULL,
+    created_by INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Auditoría
+CREATE TABLE IF NOT EXISTS audits (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT DEFAULT NULL,
+    action VARCHAR(255) NOT NULL,
+    entity VARCHAR(100) DEFAULT NULL,
+    entity_id VARCHAR(100) DEFAULT NULL,
+    details JSON DEFAULT NULL,
+    ip VARCHAR(45) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Notificaciones / webhooks
+CREATE TABLE IF NOT EXISTS notifications (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    type VARCHAR(100) NOT NULL,
+    payload JSON DEFAULT NULL,
+    sent_at TIMESTAMP NULL,
+    status ENUM('pending','sent','failed') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Insertar datos de ejemplo
@@ -226,3 +289,5 @@ CREATE TABLE IF NOT EXISTS assignments (
     FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
+-- Note: schema is managed via SQL migrations in database/migrations.
+-- Use backend/scripts/run_migrations.sh to apply new migrations.

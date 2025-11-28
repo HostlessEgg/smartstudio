@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import SubmissionBox from '../components/SubmissionBox';
+import GradeBook from '../components/GradeBook';
+import Toast from '../components/Toast';
 
 const CourseView = () => {
   const { user } = useAuth();
@@ -11,10 +14,25 @@ const CourseView = () => {
   const [loading, setLoading] = useState(true);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [progress, setProgress] = useState({ total_lessons: 0, completed_lessons: 0 });
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [enrollLoading, setEnrollLoading] = useState(false);
 
   useEffect(() => {
     fetchCourse();
     fetchProgress();
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const fetchEnroll = async () => {
+      try {
+        const r = await axios.get(`/api/courses/${id}/enrolled`);
+        setIsEnrolled(!!r.data?.enrolled);
+      } catch (err) {
+        console.error('Error fetching enrollment status:', err);
+      }
+    };
+    fetchEnroll();
   }, [id]);
 
   const fetchCourse = async () => {
@@ -92,6 +110,34 @@ const CourseView = () => {
               <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
                 {getProgressPercentage()}% completado
               </span>
+              {!isEnrolled && user && user.role === 'student' && (
+                <>
+                  <button
+                    onClick={async () => {
+                      if (enrollLoading) return;
+                      setEnrollLoading(true);
+                      try {
+                        const res = await axios.post(`/api/courses/${id}/enroll`);
+                        if (res.data && res.data.enrolled) {
+                          setToast({ message: 'Inscripción exitosa', type: 'success' });
+                          setIsEnrolled(true);
+                        } else {
+                          setToast({ message: res.data?.message || 'Inscripción completada', type: 'success' });
+                          setIsEnrolled(true);
+                        }
+                      } catch (err) {
+                        console.error('Error enrolling:', err);
+                        setToast({ message: err.response?.data?.error || 'Error inscribiéndose', type: 'error' });
+                      } finally {
+                        setEnrollLoading(false);
+                      }
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+                  >
+                    {enrollLoading ? 'Inscribiendo...' : 'Inscribirse'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -215,17 +261,33 @@ const CourseView = () => {
                       )}
                     </div>
 
-                    <div className="flex justify-between items-center pt-6 border-t border-gray-200">
-                      <button
-                        onClick={() => markLessonCompleted(selectedLesson.id)}
-                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg"
-                      >
-                        Marcar como Completado
-                      </button>
-                      
-                      <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">
-                        Siguiente Lección
-                      </button>
+                    <div className="flex flex-col gap-4 pt-6 border-t border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <button
+                            onClick={() => markLessonCompleted(selectedLesson.id)}
+                            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg mr-3"
+                          >
+                            Marcar como Completado
+                          </button>
+                        </div>
+                        <div>
+                          <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">
+                            Siguiente Lección
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Entregas / Calificaciones */}
+                      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {user && user.role === 'student' && (
+                          <SubmissionBox />
+                        )}
+
+                        {user && (user.role === 'teacher' || user.role === 'admin') && (
+                          <GradeBook />
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -250,6 +312,7 @@ const CourseView = () => {
           </div>
         </div>
       </div>
+        <Toast message={toast?.message} type={toast?.type} onClose={() => setToast(null)} />
     </div>
   );
 };

@@ -101,18 +101,20 @@ const CourseCreator = () => {
     }
 
     try {
-      // En una implementación real, aquí enviarías los datos al backend
-      console.log('Datos del curso:', { ...courseData, modules });
-      
-      // Simulación de éxito
-      setTimeout(() => {
-        alert('Curso creado exitosamente!');
+      const payload = { ...courseData, modules: modules.map(m => ({ title: m.title, description: m.description, order_index: m.order_index || 0, lessons: (m.lessons || []).map(l => ({ title: l.title, lesson_type: l.lesson_type, content: l.content })) })) };
+      const res = await axios.post('/api/courses', payload);
+      if (res.status === 201 && res.data && res.data.course && res.data.course.id) {
+        alert('Curso creado exitosamente');
+        navigate(`/course/${res.data.course.id}`);
+      } else {
+        console.error('Unexpected response creating course', res.data);
+        alert('Curso creado pero respuesta inesperada');
         navigate('/dashboard');
-      }, 1000);
-
+      }
     } catch (error) {
       console.error('Error creating course:', error);
-      alert('Error al crear el curso');
+      const errMsg = error.response?.data?.error || (error.response?.data?.errors ? error.response.data.errors.map(e=>e.msg).join(', ') : null) || 'Error al crear el curso';
+      alert(errMsg);
     } finally {
       setLoading(false);
     }
