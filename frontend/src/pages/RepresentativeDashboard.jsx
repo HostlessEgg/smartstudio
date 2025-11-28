@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import Toast from '../components/Toast';
 
 export default function RepresentativeDashboard() {
   const { user } = useAuth();
@@ -8,6 +9,7 @@ export default function RepresentativeDashboard() {
   const [received, setReceived] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [toast, setToast] = useState({ message: '', type: 'info' });
 
   useEffect(() => {
     if (!user) return;
@@ -36,28 +38,38 @@ export default function RepresentativeDashboard() {
       // refresh
       const res = await axios.get('/api/representatives/received');
       setReceived(res.data.requests || []);
+      setToast({ message: 'Consentimiento otorgado.', type: 'success' });
     } catch (err) {
       setError(err.response?.data?.error || err.message);
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' });
     }
   };
 
   const handleRevoke = async (repId) => {
     try {
+      const ok = window.confirm('¿Estás seguro de revocar el consentimiento?');
+      if (!ok) return;
       await axios.post('/api/representatives/consent', { studentId: user.id, representativeId: repId, action: 'revoke' });
       const res = await axios.get('/api/representatives/received');
       setReceived(res.data.requests || []);
+      setToast({ message: 'Consentimiento revocado.', type: 'success' });
     } catch (err) {
       setError(err.response?.data?.error || err.message);
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' });
     }
   };
 
   const handleCancel = async (repId) => {
     try {
+      const ok = window.confirm('¿Cancelar esta solicitud? Esta acción no se puede deshacer.');
+      if (!ok) return;
       await axios.delete(`/api/representatives/${repId}/cancel`);
       const res = await axios.get('/api/representatives/requests');
       setRequests(res.data.requests || []);
+      setToast({ message: 'Solicitud cancelada.', type: 'success' });
     } catch (err) {
       setError(err.response?.data?.error || err.message);
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' });
     }
   };
 
@@ -115,3 +127,5 @@ export default function RepresentativeDashboard() {
     </div>
   );
 }
+
+// Render toast at module root so it shows on this page
