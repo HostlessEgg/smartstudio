@@ -1,0 +1,259 @@
+openapi: 3.0.3
+info:
+  title: SmartStudio LMS API (OpenAPI stub)
+  version: '0.1.0'
+  description: |
+    Especificación OpenAPI mínima para los endpoints críticos usados en la fase 2.
+servers:
+  - url: http://localhost:5000
+    description: Local backend dev
+paths:
+  /api/users:
+    get:
+      summary: Listar usuarios (paginado)
+      responses:
+        '200':
+          description: Lista de usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  meta:
+                    type: object
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+    post:
+      summary: Crear usuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201': { description: 'Usuario creado' }
+
+  /api/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Obtener usuario por id
+      responses:
+        '200':
+          description: Usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      summary: Actualizar usuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200': { description: 'Usuario actualizado' }
+    delete:
+      summary: Eliminar usuario
+      responses:
+        '200': { description: 'Usuario eliminado' }
+
+  /api/course_structure:
+    get:
+      summary: Obtener estructura de curso (editor)
+      responses:
+        '200':
+          description: Estructura del curso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseStructure'
+    post:
+      summary: Actualizar estructura de curso
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseStructure'
+      responses:
+        '200': { description: 'Estructura actualizada' }
+
+  /api/consents:
+    get:
+      summary: Obtener consents (list)
+      responses:
+        '200':
+          description: Lista de consents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  consents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Consent'
+    post:
+      summary: Crear/registrar un consentimiento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Consent'
+      responses:
+        '201': { description: 'Consent registrado' }
+
+  /api/consents_audit:
+    get:
+      summary: Obtener auditoría de consents
+      responses:
+        '200':
+          description: Auditoría de consents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audit:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConsentAudit'
+
+  /api/submissions:
+    get:
+      summary: Listar envíos
+      responses:
+        '200':
+          description: Lista de envíos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submissions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Submission'
+    post:
+      summary: Crear un submission (archivo/metadatos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionCreate'
+      responses:
+        '201': { description: 'Submission creado' }
+
+  /api/settings:
+    get:
+      summary: Obtener settings del sistema
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+    post:
+      summary: Actualizar settings (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
+      responses:
+        '200': { description: 'Settings actualizados' }
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+    UserCreate:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        password: { type: string }
+        role: { type: string }
+    UserUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        occupation: { type: string }
+        organization: { type: string }
+    CourseStructure:
+      type: object
+      properties:
+        courseId: { type: string }
+        title: { type: string }
+        modules:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              lessons:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    title: { type: string }
+        versions:
+          type: array
+    Consent:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: integer }
+        type: { type: string }
+        grantedAt: { type: string, format: date-time }
+    ConsentAudit:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: integer }
+        action: { type: string }
+        timestamp: { type: string, format: date-time }
+    Submission:
+      type: object
+      properties:
+        id: { type: integer }
+        studentId: { type: integer }
+        assignmentId: { type: integer }
+        filename: { type: string }
+        createdAt: { type: string, format: date-time }
+    SubmissionCreate:
+      type: object
+      properties:
+        studentId: { type: integer }
+        assignmentId: { type: integer }
+        filename: { type: string }
+    Settings:
+      type: object
+      properties:
+        quizPassThreshold: { type: number }
