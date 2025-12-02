@@ -12,6 +12,24 @@ import ForumThread from './pages/ForumThread';
 import CalendarPage from './pages/Calendar';
 import AssignmentView from './pages/AssignmentView';
 import RepresentativeDashboard from './pages/RepresentativeDashboard';
+import AdminSubjects from './pages/AdminSubjects';
+import BulkImportPage from './pages/BulkImportPage';
+import AuditLogPage from './pages/AuditLogPage';
+import SubmissionInbox from './pages/SubmissionInbox';
+import MyProgressPage from './pages/MyProgressPage';
+import SubmissionReview from './pages/SubmissionReview';
+import RepresentativeSettings from './pages/RepresentativeSettings';
+import CalendarIcalExport from './pages/CalendarIcalExport';
+import UserAdminPage from './pages/UserAdminPage';
+import CourseStructureEditor from './pages/CourseStructureEditor';
+import ConsentAuditView from './pages/ConsentAuditView';
+import MessagingComponent from './components/MessagingComponent';
+import CohortManagement from './pages/CohortManagement';
+import CalendarAdmin from './pages/CalendarAdmin';
+import MySubmissionsPage from './pages/MySubmissionsPage';
+import CertificateView from './pages/CertificateView';
+import TeacherSubjects from './pages/TeacherSubjects';
+import StudentSubjects from './pages/StudentSubjects';
 import './App.css';
 
 function ProtectedRoute({ children, allowedRoles = [] }) {
@@ -98,6 +116,102 @@ function App() {
                 <RepresentativeDashboard />
               </ProtectedRoute>
             } />
+            <Route path="/admin/users" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <UserAdminPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/import" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <BulkImportPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/audit" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AuditLogPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/import/preview" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                {/* placeholder: preview modal route (mock) */}
+                <BulkImportPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/course-structure" element={
+              <ProtectedRoute allowedRoles={["teacher","admin"]}>
+                <CourseStructureEditor />
+              </ProtectedRoute>
+            } />
+            <Route path="/consent-audit" element={
+              <ProtectedRoute allowedRoles={["admin","representative"]}>
+                <ConsentAuditView />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/subjects" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminSubjects />
+              </ProtectedRoute>
+            } />
+            <Route path="/messaging" element={
+              <ProtectedRoute>
+                <MessagingComponent />
+              </ProtectedRoute>
+            } />
+            <Route path="/cohorts" element={
+              <ProtectedRoute allowedRoles={["teacher","admin"]}>
+                <CohortManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/calendar" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <CalendarAdmin />
+              </ProtectedRoute>
+            } />
+            <Route path="/teacher/subjects" element={
+              <ProtectedRoute allowedRoles={["teacher"]}>
+                <TeacherSubjects />
+              </ProtectedRoute>
+            } />
+            <Route path="/teacher/submissions" element={
+              <ProtectedRoute allowedRoles={["teacher"]}>
+                <SubmissionInbox />
+              </ProtectedRoute>
+            } />
+            <Route path="/teacher/submissions/:id" element={
+              <ProtectedRoute allowedRoles={["teacher"]}>
+                <SubmissionReview />
+              </ProtectedRoute>
+            } />
+            <Route path="/student/subjects" element={
+              <ProtectedRoute allowedRoles={["student"]}>
+                <StudentSubjects />
+              </ProtectedRoute>
+            } />
+            <Route path="/my/progress" element={
+              <ProtectedRoute allowedRoles={["student"]}>
+                <MyProgressPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/my/submissions" element={
+              <ProtectedRoute allowedRoles={["student"]}>
+                <MySubmissionsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/certificate" element={
+              <ProtectedRoute>
+                <CertificateView />
+              </ProtectedRoute>
+            } />
+            <Route path="/representative/settings" element={
+              <ProtectedRoute allowedRoles={["representative"]}>
+                <RepresentativeSettings />
+              </ProtectedRoute>
+            } />
+            <Route path="/calendar/ical" element={
+              <ProtectedRoute>
+                <CalendarIcalExport />
+              </ProtectedRoute>
+            } />
           </Routes>
         </div>
       </Router>
@@ -114,14 +228,35 @@ function AppHeader() {
       <div className="container mx-auto flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link to="/dashboard" className="font-bold text-lg">SMARTSTUDIO</Link>
-          <Link to="/calendar" className="text-sm text-gray-600 hover:text-gray-900">Calendario</Link>
-          <Link to="/forums/course/1" className="text-sm text-gray-600 hover:text-gray-900">Foros</Link>
+          {user && (
+            <>
+              <Link to="/calendar" className="text-sm text-gray-600 hover:text-gray-900">Calendario</Link>
+              <Link to="/forums/course/1" className="text-sm text-gray-600 hover:text-gray-900">Foros</Link>
+            </>
+          )}
+          {user && user.role === 'admin' && (
+            <>
+              <Link to="/admin/subjects" className="text-sm text-gray-600 hover:text-gray-900">Materias</Link>
+              <Link to="/admin/users" className="text-sm text-gray-600 hover:text-gray-900">Usuarios</Link>
+            </>
+          )}
+          {user && user.role === 'teacher' && (
+            <Link to="/teacher/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
+          )}
+          {user && user.role === 'student' && (
+            <Link to="/student/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
+          )}
+          {user && (user.role === 'teacher' || user.role === 'admin') && (
+            <Link to="/course-structure" className="text-sm text-gray-600 hover:text-gray-900">Editor de Curso</Link>
+          )}
         </div>
         <div>
           {user ? (
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-700">{user.name || user.email}</span>
-              <Link to="/representative" className="text-sm text-gray-600 hover:text-gray-900">Representante</Link>
+              {user.role === 'admin' && (
+                <Link to="/representative" className="text-sm text-gray-600 hover:text-gray-900">Representante</Link>
+              )}
               <button onClick={logout} className="text-sm text-red-600">Cerrar sesión</button>
             </div>
           ) : (
