@@ -1,32 +1,58 @@
 openapi: 3.0.3
 info:
-  title: SmartStudio LMS API (OpenAPI stub)
-  version: '0.1.0'
+  title: SmartStudio LMS API
+  version: '0.2.0'
   description: |
-    Especificación OpenAPI mínima para los endpoints críticos usados en la fase 2.
+    Especificación OpenAPI (API-first) para SmartStudio LMS.
+    Esta especificación cubre los endpoints críticos para la Fase 2:
+    usuarios, import masivo, estructura de cursos y versionado, auditoría de consentimientos,
+    envíos (submissions), settings y endpoints auxiliares (health, uploads, representatives).
 servers:
   - url: http://localhost:5000
-    description: Local backend dev
+    description: Local development server
+security:
+  - bearerAuth: []
 paths:
-  /api/users:
+  /api/health:
     get:
-      summary: Listar usuarios (paginado)
+      summary: Estado del servicio
+      description: Punto de salud rápido para ver si la API responde.
       responses:
         '200':
-          description: Lista de usuarios
+          description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  meta:
-                    type: object
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/Health'
+
+  /api/users:
+    get:
+      summary: Listar usuarios
+      description: Obtener una página de usuarios. Requiere autenticación (teacher/admin).
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: role
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista paginada de usuarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsers'
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       summary: Crear usuario
+      description: Crear un nuevo usuario (registro público o admin-created).
       requestBody:
         required: true
         content:
@@ -34,24 +60,53 @@ paths:
             schema:
               $ref: '#/components/schemas/UserCreate'
       responses:
-        '201': { description: 'Usuario creado' }
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /api/users/import:
+    post:
+      summary: Importar usuarios en masa (CSV)
+      description: Importa usuarios desde CSV. Responde con un reporte de importación.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Reporte de importación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportReport'
 
   /api/users/{id}:
     parameters:
       - name: id
         in: path
         required: true
-        schema:
-          type: integer
+        schema: { type: integer }
     get:
       summary: Obtener usuario por id
       responses:
         '200':
-          description: Usuario
+          description: Usuario encontrado
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       summary: Actualizar usuario
       requestBody:
@@ -67,18 +122,36 @@ paths:
       responses:
         '200': { description: 'Usuario eliminado' }
 
-  /api/course_structure:
+  /api/representatives:
     get:
-      summary: Obtener estructura de curso (editor)
+      summary: Listar representantes
       responses:
         '200':
-          description: Estructura del curso
+          description: Lista de representantes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Representative'
+
+  /api/course_structure:
+    get:
+      summary: Obtener estructura de curso por courseId (editor)
+      parameters:
+        - name: courseId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Estructura de curso
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CourseStructure'
     post:
-      summary: Actualizar estructura de curso
+      summary: Guardar/actualizar estructura de curso
       requestBody:
         required: true
         content:
@@ -88,12 +161,40 @@ paths:
       responses:
         '200': { description: 'Estructura actualizada' }
 
-  /api/consents:
+  /api/course_structure/{courseId}/versions:
+    parameters:
+      - name: courseId
+        in: path
+        required: true
+        schema: { type: string }
     get:
-      summary: Obtener consents (list)
+      summary: Listar versiones de la estructura del curso
       responses:
         '200':
-          description: Lista de consents
+          description: Lista de versiones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourseVersion'
+    post:
+      summary: Crear nueva versión (snapshot)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseVersionCreate'
+      responses:
+        '201': { description: 'Versión creada' }
+
+  /api/consents:
+    get:
+      summary: Listar consentimientos
+      responses:
+        '200':
+          description: Consents
           content:
             application/json:
               schema:
@@ -104,38 +205,49 @@ paths:
                     items:
                       $ref: '#/components/schemas/Consent'
     post:
-      summary: Crear/registrar un consentimiento
+      summary: Registrar un consentimiento
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Consent'
+              $ref: '#/components/schemas/ConsentCreate'
       responses:
         '201': { description: 'Consent registrado' }
 
   /api/consents_audit:
     get:
-      summary: Obtener auditoría de consents
+      summary: Obtener auditoría de consentimientos
+      parameters:
+        - name: userId
+          in: query
+          schema: { type: integer }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
       responses:
         '200':
           description: Auditoría de consents
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  audit:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ConsentAudit'
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConsentAudit'
 
   /api/submissions:
     get:
-      summary: Listar envíos
+      summary: Listar submissions
+      parameters:
+        - name: studentId
+          in: query
+          schema: { type: integer }
       responses:
         '200':
-          description: Lista de envíos
+          description: Lista de submissions
           content:
             application/json:
               schema:
@@ -146,19 +258,32 @@ paths:
                     items:
                       $ref: '#/components/schemas/Submission'
     post:
-      summary: Crear un submission (archivo/metadatos)
+      summary: Subir un submission (archivo)
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: '#/components/schemas/SubmissionCreate'
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                studentId:
+                  type: integer
+                assignmentId:
+                  type: integer
       responses:
-        '201': { description: 'Submission creado' }
+        '201':
+          description: Submission creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
 
   /api/settings:
     get:
-      summary: Obtener settings del sistema
+      summary: Obtener configuración global
       responses:
         '200':
           description: Settings
@@ -177,19 +302,93 @@ paths:
       responses:
         '200': { description: 'Settings actualizados' }
 
+  /api/uploads:
+    post:
+      summary: Subir archivo genérico
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Archivo subido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  url: { type: string }
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Credenciales inválidas o ausentes
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
   schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+
+    PaginationMeta:
+      type: object
+      properties:
+        total:
+          type: integer
+        total_pages:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+
     User:
       type: object
       properties:
-        id:
-          type: integer
-        name:
-          type: string
-        email:
-          type: string
-        role:
-          type: string
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string }
+        avatar_url: { type: string, nullable: true }
+        occupation: { type: string, nullable: true }
+        organization: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+
     UserCreate:
       type: object
       required: [name, email, password]
@@ -198,47 +397,119 @@ components:
         email: { type: string }
         password: { type: string }
         role: { type: string }
+
     UserUpdate:
       type: object
       properties:
         name: { type: string }
         occupation: { type: string }
         organization: { type: string }
+        avatar_url: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    PaginatedUsers:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    ImportReport:
+      type: object
+      properties:
+        imported: { type: integer }
+        skipped: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              line: { type: string }
+              error: { type: string }
+
+    Representative:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+
     CourseStructure:
       type: object
       properties:
         courseId: { type: string }
         title: { type: string }
+        description: { type: string, nullable: true }
         modules:
           type: array
           items:
-            type: object
-            properties:
-              id: { type: string }
-              title: { type: string }
-              lessons:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id: { type: string }
-                    title: { type: string }
+            $ref: '#/components/schemas/Module'
         versions:
           type: array
+          items:
+            $ref: '#/components/schemas/CourseVersion'
+
+    Module:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        order_index: { type: integer }
+        lessons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lesson'
+
+    Lesson:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        order_index: { type: integer }
+
+    CourseVersion:
+      type: object
+      properties:
+        version: { type: string }
+        timestamp: { type: string, format: date-time }
+        note: { type: string }
+
+    CourseVersionCreate:
+      type: object
+      properties:
+        note: { type: string }
+
     Consent:
       type: object
       properties:
         id: { type: string }
         userId: { type: integer }
-        type: { type: string }
+        consentType: { type: string }
         grantedAt: { type: string, format: date-time }
+
+    ConsentCreate:
+      type: object
+      required: [userId, consentType]
+      properties:
+        userId: { type: integer }
+        consentType: { type: string }
+        metadata: { type: object }
+
     ConsentAudit:
       type: object
       properties:
         id: { type: string }
         userId: { type: integer }
         action: { type: string }
+        details: { type: object }
         timestamp: { type: string, format: date-time }
+
     Submission:
       type: object
       properties:
@@ -246,14 +517,18 @@ components:
         studentId: { type: integer }
         assignmentId: { type: integer }
         filename: { type: string }
+        url: { type: string }
         createdAt: { type: string, format: date-time }
+
     SubmissionCreate:
       type: object
       properties:
         studentId: { type: integer }
         assignmentId: { type: integer }
         filename: { type: string }
+
     Settings:
       type: object
       properties:
         quizPassThreshold: { type: number }
+
