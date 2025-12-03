@@ -71,6 +71,22 @@ npx playwright show-report e2e/playwright-report
 ## Sugerencias
 - Si vas a ejecutar en CI, asegúrate de instalar navegadores (`npx playwright install --with-deps`) y de exponer los puertos correctamente.
 - Si Vite no arranca en el puerto esperado, verifica `vite.config.js` o pasa `--port` explícito.
+
+## Script automatizado: `frontend/scripts/run-e2e.sh`
+
+Hay un script que automatiza el arranque del Mock Server y Vite, espera que estén disponibles y ejecuta Playwright E2E.
+
+Uso rápido:
+
+```bash
+# ejecuta y detiene los servidores que arranque el script al terminar
+./frontend/scripts/run-e2e.sh
+
+# no parar los servidores al terminar (útil para depuración)
+./frontend/scripts/run-e2e.sh --keep
+```
+
+El script guarda PIDs temporales en `/tmp/run-e2e-*.pid` y logs en `/tmp/mock-server.log` y `/tmp/vite-dev.log`.
 Playwright E2E smoke tests
 
 Quick start:
