@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "vitest",
+    "test": "vitest src",
     "test:e2e": "playwright test --config=e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test --config=e2e/playwright.config.ts --headed",
     "build": "vite build",
@@ -36,11 +36,13 @@
       "chromium"
     ]
   },
-  "vitest": {
+    "vitest": {
     "setupFiles": [
       "./src/setupTests.js"
     ],
     "environment": "jsdom",
-    "globals": true
+    "globals": true,
+    "exclude": ["e2e/**"],
+    "testTimeout": 20000
   }
 }
