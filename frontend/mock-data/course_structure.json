@@ -1,0 +1,41 @@
+{
+  "courseId": "course-101",
+  "title": "Updated Demo Course",
+  "modules": [
+    {
+      "id": "m1",
+      "title": "Module 1: Foundations",
+      "lessons": [
+        {
+          "id": "l1",
+          "title": "Lesson 1: Welcome"
+        },
+        {
+          "id": "l2",
+          "title": "Lesson 2: Overview"
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "title": "Module 2: Core Concepts",
+      "lessons": [
+        {
+          "id": "l3",
+          "title": "Lesson 3: Concepts"
+        },
+        {
+          "id": "l4",
+          "title": "Lesson 4: Examples"
+        }
+      ]
+    }
+  ],
+  "versions": [
+    {
+      "version": 2,
+      "timestamp": "2025-11-30T00:00:00Z",
+      "note": "Edited via test"
+    }
+  ]
+}
