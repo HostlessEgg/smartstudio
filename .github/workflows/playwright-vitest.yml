@@ -30,41 +30,17 @@ jobs:
           cd frontend
           npx playwright install --with-deps
 
-      - name: Start mock server (background)
-        run: |
-          cd frontend
-          nohup node mock-server.cjs > /tmp/mock-server.log 2>&1 & echo $! > /tmp/mock-server.pid
-
-      - name: Start Vite dev server (background)
-        run: |
-          cd frontend
-          nohup npm run dev -- --port 3000 > /tmp/vite-dev.log 2>&1 & echo $! > /tmp/vite-dev.pid
-
-      - name: Wait for Vite to be ready
-        run: |
-          n=0
-          until [ $n -ge 60 ]; do
-            if curl -sSf http://localhost:3000/ >/dev/null 2>&1; then
-              echo "Vite is ready"; break
-            fi
-            n=$((n+1))
-            sleep 2
-          done
-          if [ $n -ge 60 ]; then
-            echo "Vite did not start in time"; cat /tmp/vite-dev.log || true; exit 1
-          fi
+      # Use helper script to start mock + vite and run Playwright
 
       - name: Run unit tests (Vitest)
         run: |
           cd frontend
           npm test --silent
 
-      - name: Run Playwright E2E
-        env:
-          BASE_URL: http://localhost:3000
+      - name: Run Playwright E2E (helper)
         run: |
-          cd frontend
-          BASE_URL=http://localhost:3000 npm run test:e2e -- --reporter=list
+          chmod +x frontend/scripts/run-e2e.sh
+          ./frontend/scripts/run-e2e.sh
 
       - name: Upload Playwright report
         if: always()
