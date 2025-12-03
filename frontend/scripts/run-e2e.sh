@@ -45,8 +45,8 @@ is_up(){
 }
 
 start_mock(){
-  if is_up "http://localhost:${MOCK_PORT}/"; then
-    log "Mock server already responding on port ${MOCK_PORT}"
+  if is_up "http://localhost:${MOCK_PORT}/api/subjects"; then
+    log "Mock server already responding on port ${MOCK_PORT} (api/subjects)"
     return 0
   fi
   log "Starting mock server on port ${MOCK_PORT}..."
@@ -110,7 +110,8 @@ start_mock
 start_vite
 
 log "Waiting for servers to become ready..."
-wait_for "http://localhost:${MOCK_PORT}/" || (cat /tmp/mock-server.log 2>/dev/null || true; exit 1)
+# Check a known-200 endpoint on the mock server (root / returns 404)
+wait_for "http://localhost:${MOCK_PORT}/api/subjects" || (cat /tmp/mock-server.log 2>/dev/null || true; exit 1)
 wait_for "http://localhost:${VITE_PORT}/" || (cat /tmp/vite-dev.log 2>/dev/null || true; exit 1)
 
 log "Running Playwright E2E (BASE_URL=http://localhost:${VITE_PORT})"
