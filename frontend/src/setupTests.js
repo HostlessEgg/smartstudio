@@ -7,4 +7,16 @@ try {
 	// ignore environments without DOM
 }
 // stub window.alert used by some components
-try { window.alert = window.alert || function(){} } catch (e) {}
+// Ensure `alert` exists on the global object without triggering jsdom accessors
+if (typeof globalThis !== 'undefined') {
+	try {
+		Object.defineProperty(globalThis, 'alert', {
+			value: () => {},
+			writable: true,
+			configurable: true,
+			enumerable: false,
+		});
+	} catch (e) {
+		try { globalThis.alert = () => {}; } catch (e) { /* ignore */ }
+	}
+}
