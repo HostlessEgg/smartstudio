@@ -1,0 +1,67 @@
+name: Backend tests
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - 'database/**'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'database/**'
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "MySQL is up"; break
+            fi
+            echo "Waiting for MySQL... ($i)"; sleep 2
+          done
+
+      - name: Install mysql client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Import database schema
+        run: mysql -h 127.0.0.1 -uroot -proot < database/schema.sql
+
+      - name: Install backend deps
+        run: |
+          cd backend
+          npm install
+
+      - name: Run backend tests
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: smartstudio_lms
+          JWT_SECRET: test_secret
+        run: |
+          cd backend
+          npm test --silent

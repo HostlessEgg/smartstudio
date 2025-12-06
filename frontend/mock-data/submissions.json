@@ -1,0 +1,7 @@
+{
+  "submissions": [
+    { "id": 1, "assignmentId": 101, "student": "Student Alpha", "student_email": "student.alpha@demo.test", "status": "submitted", "submittedAt": "2025-11-28T10:00:00Z", "files": ["submission1.pdf"] },
+    { "id": 2, "assignmentId": 101, "student": "Student Beta", "student_email": "student.beta@demo.test", "status": "graded", "submittedAt": "2025-11-27T09:20:00Z", "grade": 85, "files": ["submission2.zip"] },
+    { "id": 3, "assignmentId": 102, "student": "Student Alpha", "student_email": "student.alpha@demo.test", "status": "late", "submittedAt": "2025-11-29T14:10:00Z", "files": ["submission3.docx"] }
+  ]
+}

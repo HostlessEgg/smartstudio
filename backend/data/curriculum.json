@@ -1,0 +1,92 @@
+[
+  {
+    "nivel": "Media General",
+    "grados": {
+      "Primero": {
+        "total_horas": 46,
+        "total_secciones": 46,
+        "asignaturas": {
+          "Castellano": { "horas": 6, "secciones": 4 },
+          "Inglés y otras lenguas extranjeras": { "horas": 4, "secciones": 4 },
+          "Matemática": { "horas": 6, "secciones": 4 },
+          "Educación Física": { "horas": 2, "secciones": 4 },
+          "Arte y Patrimonio": { "horas": 2, "secciones": 4 },
+          "Ciencias Naturales": { "horas": 4, "secciones": 4 },
+          "Geografía-Historia y Ciudadanía": { "horas": 4, "secciones": 4 },
+          "Orientación y Convivencia": { "horas": 2, "secciones": 4 },
+          "Participación en Grupos de Recreación y Producción": { "horas": 4, "secciones": 4 }
+        }
+      },
+      "Segundo": {
+        "total_horas": 46,
+        "total_secciones": 46,
+        "asignaturas": {
+          "Castellano": { "horas": 6, "secciones": 4 },
+          "Inglés y otras lenguas extranjeras": { "horas": 4, "secciones": 4 },
+          "Matemática": { "horas": 6, "secciones": 4 },
+          "Educación Física": { "horas": 2, "secciones": 4 },
+          "Arte y Patrimonio": { "horas": 2, "secciones": 4 },
+          "Ciencias Naturales": { "horas": 4, "secciones": 4 },
+          "Geografía-Historia y Ciudadanía": { "horas": 4, "secciones": 4 },
+          "Orientación y Convivencia": { "horas": 2, "secciones": 4 },
+          "Participación en Grupos de Recreación y Producción": { "horas": 4, "secciones": 4 }
+        }
+      },
+      "Tercero": {
+        "total_horas": 46,
+        "total_secciones": 46,
+        "asignaturas": {
+          "Castellano": { "horas": 6, "secciones": 4 },
+          "Inglés y otras lenguas extranjeras": { "horas": 4, "secciones": 4 },
+          "Matemática": { "horas": 6, "secciones": 4 },
+          "Educación Física": { "horas": 2, "secciones": 4 },
+          "Física": { "horas": 4, "secciones": 4 },
+          "Química": { "horas": 4, "secciones": 4 },
+          "Biología": { "horas": 4, "secciones": 4 },
+          "Geografía-Historia y Ciudadanía": { "horas": 4, "secciones": 4 },
+          "Orientación y Convivencia": { "horas": 2, "secciones": 4 },
+          "Participación en Grupos de Recreación y Producción": { "horas": 4, "secciones": 4 }
+        }
+      }
+    }
+  },
+  {
+    "nivel": "Ciencias",
+    "grados": {
+      "Cuarto": {
+        "total_horas": 46,
+        "asignaturas": {
+          "Castellano": { "horas": 4, "secciones": 2 },
+          "Inglés y otras lenguas extranjeras": { "horas": 4, "secciones": 2 },
+          "Matemática": { "horas": 6, "secciones": 2 },
+          "Educación Física": { "horas": 2, "secciones": 2 },
+          "Física": { "horas": 4, "secciones": 2 },
+          "Química": { "horas": 4, "secciones": 2 },
+          "Biología": { "horas": 4, "secciones": 2 },
+          "Ciencias de la Tierra": { "horas": 4, "secciones": 2 },
+          "Geografía-Historia y Ciudadanía": { "horas": 4, "secciones": 2 },
+          "Formación para la Soberanía Nacional": { "horas": 2, "secciones": 2 },
+          "Orientación y Convivencia": { "horas": 2, "secciones": 2 },
+          "Participación en Grupos de Recreación y Producción": { "horas": 2, "secciones": 2 }
+        }
+      },
+      "Quinto": {
+        "total_horas": 46,
+        "asignaturas": {
+          "Castellano": { "horas": 4, "secciones": 2 },
+          "Inglés y otras lenguas extranjeras": { "horas": 4, "secciones": 2 },
+          "Matemática": { "horas": 6, "secciones": 2 },
+          "Educación Física": { "horas": 2, "secciones": 2 },
+          "Física": { "horas": 4, "secciones": 2 },
+          "Química": { "horas": 4, "secciones": 2 },
+          "Biología": { "horas": 4, "secciones": 2 },
+          "Ciencias de la Tierra": { "horas": 4, "secciones": 2 },
+          "Geografía-Historia y Ciudadanía": { "horas": 4, "secciones": 2 },
+          "Formación para la Soberanía Nacional": { "horas": 2, "secciones": 2 },
+          "Orientación y Convivencia": { "horas": 2, "secciones": 2 },
+          "Participación en Grupos de Recreación y Producción": { "horas": 2, "secciones": 2 }
+        }
+      }
+    }
+  }
+]

@@ -12,4 +12,5 @@ export default defineConfig({
       }
     }
   }
+  // Note: FullCalendar will be loaded via UMD CDN in index.html to avoid Vite pre-bundle issues.
 })

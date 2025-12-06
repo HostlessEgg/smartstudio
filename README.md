@@ -2,7 +2,7 @@
 
 Sistema de Gestión de Aprendizaje desarrollado con React, Node.js y MySQL.
 
-## 🚀 Instalación Rápida
+## 🚀ma
 
 ### Prerrequisitos
 - Node.js 16+
@@ -12,3 +12,6 @@ Sistema de Gestión de Aprendizaje desarrollado con React, Node.js y MySQL.
 ### 1. Configurar Base de Datos
 ```bash
 mysql -u root -p < database/schema.sql
+```
+
+Requisitos funcionales principales: `REQUIREMENTS.md`.

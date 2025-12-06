@@ -18,39 +18,56 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    // Client-side validation before sending
     setError('');
+    const email = formData.email.trim();
+    const password = formData.password;
+    const name = formData.name.trim();
 
-    console.log('🎯 Iniciando submit...');
+    const passwordValid = (pw) => {
+      if (!pw || pw.length < 8) return false;
+      return /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])/.test(pw);
+    };
 
+    if (isLogin) {
+      if (!email || !password) {
+        setError('Email y contraseña son requeridos');
+        return;
+      }
+    } else {
+      if (!name) {
+        setError('Nombre es requerido');
+        return;
+      }
+      if (!email) {
+        setError('Email es requerido');
+        return;
+      }
+      if (!passwordValid(password)) {
+        setError('Password mínimo 8 caracteres y debe incluir mayúscula, minúscula, número y símbolo');
+        return;
+      }
+    }
+
+    setLoading(true);
     try {
       let result;
       if (isLogin) {
-        console.log('🔐 Intentando login...');
-        result = await login(formData.email, formData.password);
+        result = await login(email, password);
       } else {
-        console.log('📝 Intentando registro...');
-        result = await register(formData);
+        // ensure we send trimmed name/email
+        result = await register({ ...formData, name, email });
       }
 
-      console.log('📋 Resultado recibido:', result);
-
       if (result.success) {
-        console.log('✅ Éxito, redirigiendo a /dashboard...');
-        // Pequeño delay para asegurar que el estado se actualice
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 100);
+        navigate('/dashboard');
       } else {
-        console.log('❌ Error:', result.error);
         setError(result.error);
       }
     } catch (err) {
-      console.error('💥 Error catch:', err);
       setError('Error de conexión');
     } finally {
       setLoading(false);
-      console.log('🏁 Submit finalizado');
     }
   };
 

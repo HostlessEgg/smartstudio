@@ -1,0 +1,74 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "Admin Demo",
+      "email": "admin@demo.test",
+      "role": "admin",
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "Teacher One",
+      "email": "teacher1@demo.test",
+      "role": "teacher",
+      "active": true
+    },
+    {
+      "id": 3,
+      "name": "Student Alpha",
+      "email": "student.alpha@demo.test",
+      "role": "student",
+      "active": true
+    },
+    {
+      "id": 4,
+      "name": "Student Beta",
+      "email": "student.beta@demo.test",
+      "role": "student",
+      "active": true
+    },
+    {
+      "id": 5,
+      "name": "Representative X",
+      "email": "rep.x@demo.test",
+      "role": "representative",
+      "active": true
+    },
+    {
+      "id": 6,
+      "name": "Instructor Two",
+      "email": "instructor2@demo.test",
+      "role": "teacher",
+      "active": true
+    },
+    {
+      "id": 7,
+      "name": "User Test",
+      "email": "user.test@demo.test",
+      "role": "student",
+      "active": false
+    },
+    {
+      "id": 8,
+      "name": "Support",
+      "email": "support@demo.test",
+      "role": "admin",
+      "active": true
+    },
+    {
+      "id": 9,
+      "name": "Observer",
+      "email": "observer@demo.test",
+      "role": "observer",
+      "active": true
+    },
+    {
+      "id": 10,
+      "name": "Bulk User",
+      "email": "bulk.user@demo.test",
+      "role": "student",
+      "active": true
+    }
+  ]
+}
