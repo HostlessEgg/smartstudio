@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -45,9 +46,8 @@ function MyCourses() {
     const fetchCourses = async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/my-courses', { headers: { 'Content-Type': 'application/json' } });
-        const data = await res.json();
-        if (mounted) setCourses(data || []);
+        const res = await axios.get('/api/my-courses');
+        if (mounted) setCourses(res.data || []);
       } catch (err) {
         console.error('Error fetching my courses', err);
       } finally {

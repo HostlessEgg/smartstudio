@@ -1,6 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
+import ErrorBoundary from './components/ErrorBoundary';
+import ToastContainer from './components/ToastContainer';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CourseView from './pages/CourseView';
@@ -21,6 +24,7 @@ import SubmissionReview from './pages/SubmissionReview';
 import RepresentativeSettings from './pages/RepresentativeSettings';
 import CalendarIcalExport from './pages/CalendarIcalExport';
 import UserAdminPage from './pages/UserAdminPage';
+import AdminDashboard from './pages/AdminDashboard';
 import CourseStructureEditor from './pages/CourseStructureEditor';
 import ConsentAuditView from './pages/ConsentAuditView';
 import MessagingComponent from './components/MessagingComponent';
@@ -52,11 +56,13 @@ function ProtectedRoute({ children, allowedRoles = [] }) {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <div className="App">
-          <AppHeader />
-          <Routes>
+    <ToastProvider>
+      <AuthProvider>
+        <ErrorBoundary>
+          <Router>
+            <div className="App">
+              <AppHeader />
+              <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/dashboard" />} />
             
@@ -119,6 +125,11 @@ function App() {
             <Route path="/admin/users" element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <UserAdminPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminDashboard />
               </ProtectedRoute>
             } />
             <Route path="/admin/import" element={
@@ -212,10 +223,13 @@ function App() {
                 <CalendarIcalExport />
               </ProtectedRoute>
             } />
-          </Routes>
-        </div>
-      </Router>
-    </AuthProvider>
+              </Routes>
+            </div>
+            <ToastContainer />
+          </Router>
+        </ErrorBoundary>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

@@ -155,9 +155,9 @@ INSERT IGNORE INTO users (id, name, email, password, role) VALUES
 (2, 'Profesor Juan Pérez', 'profesor@smartstudio.com', '$2b$10$ExampleHash', 'teacher'),
 (3, 'Estudiante María García', 'estudiante@smartstudio.com', '$2b$10$ExampleHash', 'student');
 
-INSERT IGNORE INTO courses (id, title, description, category, level, instructor_id, is_published) VALUES 
-(1, 'Introducción a la Programación', 'Aprende los fundamentos de la programación desde cero. Perfecto para principiantes.', 'programming', 'beginner', 2, true),
-(2, 'Matemáticas Avanzadas', 'Curso avanzado de matemáticas para estudiantes universitarios.', 'mathematics', 'advanced', 2, true);
+INSERT IGNORE INTO courses (id, title, description, category, level, instructor_id) VALUES 
+(1, 'Introducción a la Programación', 'Aprende los fundamentos de la programación desde cero. Perfecto para principiantes.', 'programming', 'beginner', 2),
+(2, 'Matemáticas Avanzadas', 'Curso avanzado de matemáticas para estudiantes universitarios.', 'mathematics', 'advanced', 2);
 
 INSERT IGNORE INTO modules (id, course_id, title, description, order_index) VALUES 
 (1, 1, 'Fundamentos de Programación', 'Conceptos básicos y fundamentales', 1),

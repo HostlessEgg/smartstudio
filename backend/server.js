@@ -35,50 +35,47 @@ let authLimiter;
 let quizSubmitLimiter;
 let forumPostLimiter;
 
-const disableRateLimits = (
+const runtimeRateLimitsDisabled = () => (
     process.env.RATE_LIMITS_DISABLED === '1' ||
     String(process.env.RATE_LIMITS_DISABLED).toLowerCase() === 'true' ||
     process.env.NODE_ENV === 'test'
 );
 
-if (disableRateLimits) {
-    // no-op middlewares when disabled (tests or explicit env var)
-    apiLimiter = (req, res, next) => next();
-    authLimiter = (req, res, next) => next();
-    quizSubmitLimiter = (req, res, next) => next();
-    forumPostLimiter = (req, res, next) => next();
-} else {
-    apiLimiter = rateLimit({
-        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-        max: GLOBAL_RATE_LIMIT_MAX,
-        standardHeaders: true,
-        legacyHeaders: false,
-    });
+// Helper to wrap a middleware and check the env at request time
+const conditional = (mw) => {
+    return (req, res, next) => {
+        if (runtimeRateLimitsDisabled()) return next();
+        return mw(req, res, next);
+    };
+};
 
-    // Stricter limiter for auth-related endpoints
-    authLimiter = rateLimit({
-        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-        max: process.env.AUTH_RATE_LIMIT_MAX ? Number(process.env.AUTH_RATE_LIMIT_MAX) : 10,
-        standardHeaders: true,
-        legacyHeaders: false,
-    });
+apiLimiter = conditional(rateLimit({
+    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+    max: GLOBAL_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+}));
 
-    // Limiter for quiz submissions to prevent spam
-    quizSubmitLimiter = rateLimit({
-        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-        max: process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX ? Number(process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX) : 30,
-        standardHeaders: true,
-        legacyHeaders: false,
-    });
+authLimiter = conditional(rateLimit({
+    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+    max: process.env.AUTH_RATE_LIMIT_MAX ? Number(process.env.AUTH_RATE_LIMIT_MAX) : 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+}));
 
-    // Limiter for forum posts to avoid spam
-    forumPostLimiter = rateLimit({
-        windowMs: GLOBAL_RATE_LIMIT_WINDOW,
-        max: process.env.FORUM_POST_RATE_LIMIT_MAX ? Number(process.env.FORUM_POST_RATE_LIMIT_MAX) : 30,
-        standardHeaders: true,
-        legacyHeaders: false,
-    });
-}
+quizSubmitLimiter = conditional(rateLimit({
+    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+    max: process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX ? Number(process.env.QUIZ_SUBMIT_RATE_LIMIT_MAX) : 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+}));
+
+forumPostLimiter = conditional(rateLimit({
+    windowMs: GLOBAL_RATE_LIMIT_WINDOW,
+    max: process.env.FORUM_POST_RATE_LIMIT_MAX ? Number(process.env.FORUM_POST_RATE_LIMIT_MAX) : 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+}));
 
 app.use(apiLimiter);
 
@@ -318,9 +315,10 @@ app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), as
         const total_pages = Math.max(1, Math.ceil(total / per_page));
 
         // Data page
-        const dataSql = `SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+        // Avoid using parameter placeholders for LIMIT/OFFSET because some MySQL drivers
+        // treat them specially; inject numeric values safely since they are validated above.
+        const dataSql = `SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
         const dataParams = params.slice();
-        dataParams.push(per_page, offset);
 
         const [rows] = await connection.execute(dataSql, dataParams);
         await connection.end();
@@ -356,6 +354,42 @@ app.get('/api/users/:id', authenticateToken, async (req, res) => {
     } catch (err) {
         await connection.end();
         console.error('Error obteniendo usuario:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Admin summary: counts and DB health
+app.get('/api/admin/summary', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [[{ users_count }]] = await connection.execute('SELECT COUNT(*) AS users_count FROM users');
+        const [[{ courses_count }]] = await connection.execute('SELECT COUNT(*) AS courses_count FROM courses');
+        const [[{ submissions_count }]] = await connection.execute('SELECT COUNT(*) AS submissions_count FROM submissions');
+        const [[{ migrations_count }]] = await connection.execute('SELECT COUNT(*) AS migrations_count FROM migrations');
+
+        // Additional metrics
+        const [[{ forum_threads_count }]] = await connection.execute('SELECT COUNT(*) AS forum_threads_count FROM forum_threads');
+        const [[{ quiz_submissions_count }]] = await connection.execute('SELECT COUNT(*) AS quiz_submissions_count FROM quiz_submissions');
+        const [[{ assignments_count }]] = await connection.execute('SELECT COUNT(*) AS assignments_count FROM assignments');
+        const [recentAssignments] = await connection.execute('SELECT id, title, start_at, end_at, created_by, created_at FROM assignments ORDER BY created_at DESC LIMIT 5');
+
+        await connection.end();
+        res.json({
+            status: 'ok',
+            db: {
+                users: Number(users_count || 0),
+                courses: Number(courses_count || 0),
+                submissions: Number(submissions_count || 0),
+                migrations: Number(migrations_count || 0),
+                forum_threads: Number(forum_threads_count || 0),
+                quiz_submissions: Number(quiz_submissions_count || 0),
+                assignments: Number(assignments_count || 0)
+            },
+            recent_assignments: recentAssignments
+        });
+    } catch (err) {
+        await connection.end();
+        console.error('Error admin summary:', err);
         res.status(500).json({ error: 'Error interno' });
     }
 });
