@@ -1502,15 +1502,17 @@ app.post('/api/cohorts/:id/import-members', authenticateToken, authorizeRoles(['
 async function startServer() {
     await createDatabase();
     
-    const server = app.listen(PORT, () => {
-        console.log(`🚀 Servidor SMARTSTUDIO LMS corriendo en http://localhost:${PORT}`);
-        console.log(`📚 API disponible en http://localhost:${PORT}/api`);
+    const HOST = process.env.HOST || '0.0.0.0';
+    const server = app.listen(PORT, HOST, () => {
+        console.log(`🚀 Servidor SMARTSTUDIO LMS corriendo en http://${HOST}:${PORT}`);
+        console.log(`📚 API disponible en http://${HOST}:${PORT}/api`);
     });
     return server;
 }
 
-// Solo iniciar el servidor si NO estamos en modo test
-if (process.env.NODE_ENV !== 'test') {
+// Iniciar el servidor normalmente, pero permitir forzarlo en modo `test`
+// (útil en CI donde arrancamos el proceso externamente).
+if (process.env.NODE_ENV !== 'test' || process.env.FORCE_START === '1') {
     startServer().catch(console.error);
 }
 
