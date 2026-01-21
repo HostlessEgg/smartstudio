@@ -30,6 +30,8 @@ jobs:
       DB_NAME: smartstudio_lms
       RATE_LIMITS_DISABLED: '1'
       NODE_ENV: test
+      NODE_OPTIONS: '--dns-result-order=ipv4first'
+      TEST_BASE_URL: 'http://127.0.0.1:5000'
 
     steps:
       - name: Checkout
