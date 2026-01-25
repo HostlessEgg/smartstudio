@@ -307,6 +307,15 @@ app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), as
         if (role) { where += ' AND role = ?'; params.push(role); }
         if (tag) { where += ' AND JSON_CONTAINS(tags, ?)'; params.push(JSON.stringify(tag)); }
         if (q) { where += ' AND (name LIKE ? OR email LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+        if (typeof req.query.active !== 'undefined') {
+            let activeVal = req.query.active;
+            if (typeof activeVal === 'string') {
+                if (activeVal === '0' || activeVal.toLowerCase() === 'false') activeVal = 0;
+                else activeVal = 1;
+            }
+            where += ' AND active = ?';
+            params.push(Number(activeVal) === 0 ? 0 : 1);
+        }
 
         // Total count
         const countSql = `SELECT COUNT(*) as total FROM users ${where}`;
@@ -317,7 +326,7 @@ app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), as
         // Data page
         // Avoid using parameter placeholders for LIMIT/OFFSET because some MySQL drivers
         // treat them specially; inject numeric values safely since they are validated above.
-        const dataSql = `SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
+        const dataSql = `SELECT id, name, email, role, active, avatar_url, occupation, tags, organization, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
         const dataParams = params.slice();
 
         const [rows] = await connection.execute(dataSql, dataParams);
@@ -394,6 +403,60 @@ app.get('/api/admin/summary', authenticateToken, authorizeRoles(['admin']), asyn
     }
 });
 
+// Endpoint para consultar logs de auditoría (admin)
+app.get('/api/admin/audits', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const { page = 1, per_page = 50, q, action } = req.query;
+    const p = Math.max(1, Number(page));
+    const pp = Math.min(200, Math.max(1, Number(per_page)));
+    const offset = (p - 1) * pp;
+    try {
+        const connection = await mysql.createConnection(dbConfig);
+        let where = ' WHERE 1=1';
+        const params = [];
+        if (action) { where += ' AND action = ?'; params.push(action); }
+        if (q) { where += ' AND (entity LIKE ? OR details LIKE ? OR ip LIKE ? )'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+
+        const [countRows] = await connection.execute(`SELECT COUNT(*) as total FROM audits ${where}`, params);
+        const total = countRows && countRows[0] ? Number(countRows[0].total || 0) : 0;
+
+        const [rows] = await connection.execute(
+            `SELECT id, user_id, action, entity, entity_id, details, ip, created_at FROM audits ${where} ORDER BY created_at DESC LIMIT ${pp} OFFSET ${offset}`,
+            params
+        );
+        await connection.end();
+        res.json({ meta: { total, page: p, per_page: pp, total_pages: Math.max(1, Math.ceil(total / pp)) }, data: rows });
+    } catch (err) {
+        console.error('Error fetching audits:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Admin actions runner (minimal): Accepts { actions: ['id1','id2'] }
+// In development allow unauthenticated calls for convenience; in production require admin auth.
+if (process.env.NODE_ENV === 'development') {
+    app.post('/api/admin/actions/run', async (req, res) => {
+        try {
+            const actions = Array.isArray(req.body?.actions) ? req.body.actions : [];
+            console.log('Dev admin actions requested:', actions);
+            return res.json({ message: `Enqueued ${actions.length} admin action(s)` });
+        } catch (err) {
+            console.error('Error running admin actions (dev):', err);
+            return res.status(500).json({ error: 'Error ejecutando acciones' });
+        }
+    });
+} else {
+    app.post('/api/admin/actions/run', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+        try {
+            const actions = Array.isArray(req.body?.actions) ? req.body.actions : [];
+            console.log('Admin actions requested:', actions, 'by user', req.user?.userId);
+            return res.json({ message: `Enqueued ${actions.length} admin action(s)` });
+        } catch (err) {
+            console.error('Error running admin actions:', err);
+            return res.status(500).json({ error: 'Error ejecutando acciones' });
+        }
+    });
+}
+
 // Actualizar perfil (propio o Admin)
 app.put('/api/users/:id', authenticateToken, async (req, res) => {
     const id = Number(req.params.id);
@@ -439,6 +502,91 @@ app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ 
         await connection.end();
         console.error('Error actualizando role:', err);
         res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Acciones masivas: asignar role a múltiples usuarios (solo Admin)
+app.post('/api/users/bulk-role', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    try {
+        const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => Number.isInteger(Number(x))).map(Number) : [];
+        const role = req.body?.role;
+        if (!role || !['student','teacher','admin','guest'].includes(role)) {
+            return res.status(400).json({ error: 'role inválido' });
+        }
+        if (!ids.length) return res.status(400).json({ error: 'ids requeridos' });
+
+        const placeholders = ids.map(() => '?').join(',');
+        const connection = await mysql.createConnection(dbConfig);
+        try {
+            const [resUpd] = await connection.execute(
+                `UPDATE users SET role = ? WHERE id IN (${placeholders})`,
+                [role, ...ids]
+            );
+            await logAudit(req, 'bulk_set_role', 'user', null, { role, ids, affectedRows: resUpd?.affectedRows || 0 });
+            await connection.end();
+            return res.json({ message: 'Roles actualizados', affected: resUpd?.affectedRows || 0 });
+        } catch (err) {
+            await connection.end();
+            console.error('Error en bulk-role:', err);
+            return res.status(500).json({ error: 'Error interno' });
+        }
+    } catch (err) {
+        console.error('Error procesando bulk-role:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Acciones masivas: desactivar múltiples usuarios (solo Admin)
+app.post('/api/users/bulk-deactivate', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    try {
+        const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => Number.isInteger(Number(x))).map(Number) : [];
+        if (!ids.length) return res.status(400).json({ error: 'ids requeridos' });
+
+        const placeholders = ids.map(() => '?').join(',');
+        const connection = await mysql.createConnection(dbConfig);
+        try {
+            const [resUpd] = await connection.execute(
+                `UPDATE users SET active = 0 WHERE id IN (${placeholders})`,
+                [...ids]
+            );
+            await logAudit(req, 'bulk_deactivate', 'user', null, { ids, affectedRows: resUpd?.affectedRows || 0 });
+            await connection.end();
+            return res.json({ message: 'Usuarios desactivados', affected: resUpd?.affectedRows || 0 });
+        } catch (err) {
+            await connection.end();
+            console.error('Error en bulk-deactivate:', err);
+            return res.status(500).json({ error: 'Error interno' });
+        }
+    } catch (err) {
+        console.error('Error procesando bulk-deactivate:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Acciones masivas: reactivar múltiples usuarios (solo Admin)
+app.post('/api/users/bulk-reactivate', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    try {
+        const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(x => Number.isInteger(Number(x))).map(Number) : [];
+        if (!ids.length) return res.status(400).json({ error: 'ids requeridos' });
+
+        const placeholders = ids.map(() => '?').join(',');
+        const connection = await mysql.createConnection(dbConfig);
+        try {
+            const [resUpd] = await connection.execute(
+                `UPDATE users SET active = 1 WHERE id IN (${placeholders})`,
+                [...ids]
+            );
+            await logAudit(req, 'bulk_reactivate', 'user', null, { ids, affectedRows: resUpd?.affectedRows || 0 });
+            await connection.end();
+            return res.json({ message: 'Usuarios reactivados', affected: resUpd?.affectedRows || 0 });
+        } catch (err) {
+            await connection.end();
+            console.error('Error en bulk-reactivate:', err);
+            return res.status(500).json({ error: 'Error interno' });
+        }
+    } catch (err) {
+        console.error('Error procesando bulk-reactivate:', err);
+        return res.status(500).json({ error: 'Error interno' });
     }
 });
 

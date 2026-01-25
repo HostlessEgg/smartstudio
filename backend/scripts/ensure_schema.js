@@ -34,7 +34,8 @@ async function ensureSchema() {
       { name: 'occupation', ddl: 'ALTER TABLE users ADD COLUMN occupation VARCHAR(255) DEFAULT NULL' },
       { name: 'organization', ddl: 'ALTER TABLE users ADD COLUMN organization VARCHAR(255) DEFAULT NULL' },
       { name: 'avatar_url', ddl: "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(1024) DEFAULT NULL" },
-      { name: 'tags', ddl: 'ALTER TABLE users ADD COLUMN tags JSON DEFAULT NULL' }
+      { name: 'tags', ddl: 'ALTER TABLE users ADD COLUMN tags JSON DEFAULT NULL' },
+      { name: 'active', ddl: 'ALTER TABLE users ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1' }
     ];
 
     for (const c of cols) {

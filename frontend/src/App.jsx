@@ -25,6 +25,7 @@ import RepresentativeSettings from './pages/RepresentativeSettings';
 import CalendarIcalExport from './pages/CalendarIcalExport';
 import UserAdminPage from './pages/UserAdminPage';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminAudits from './pages/AdminAudits';
 import CourseStructureEditor from './pages/CourseStructureEditor';
 import ConsentAuditView from './pages/ConsentAuditView';
 import MessagingComponent from './components/MessagingComponent';
@@ -130,6 +131,11 @@ function App() {
             <Route path="/admin" element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/audits" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminAudits />
               </ProtectedRoute>
             } />
             <Route path="/admin/import" element={

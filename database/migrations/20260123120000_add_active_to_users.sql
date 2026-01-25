@@ -1,0 +1,3 @@
+-- Add "active" flag to users for admin deactivation
+ALTER TABLE users
+  ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1 AFTER role;

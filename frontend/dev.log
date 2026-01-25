@@ -1,9 +1,42 @@
+nohup: ignoring input
 
 > smartstudio-frontend@1.0.0 dev
 > vite
 
+Port 3000 is in use, trying another one...
+Port 3001 is in use, trying another one...
+Port 3002 is in use, trying another one...
 
-  VITE v4.5.14  ready in 817 ms
+  VITE v4.5.14  ready in 1431 ms
 
-  ➜  Local:   http://localhost:3000/
+  ➜  Local:   http://localhost:3003/
   ➜  Network: use --host to expose
+(node:112892) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+4:50:24 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+5:02:04 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+5:35:19 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+5:35:34 PM [vite] hmr update /src/pages/AdminDashboard.jsx
+6:48:17 PM [vite] hmr update /src/App.jsx
+6:48:17 PM [vite] hmr update /src/contexts/ToastContext.jsx
+6:48:17 PM [vite] hmr update /src/components/Spinner.jsx
+6:48:17 PM [vite] hmr update /src/pages/AdminDashboard.jsx
+6:48:17 PM [vite] hmr update /src/pages/AdminDashboard.jsx, /src/pages/AdminTasks.jsx, /src/pages/UserAdminPage.jsx
+6:48:17 PM [vite] hmr update /src/components/EmptyState.jsx
+6:48:17 PM [vite] hmr update /src/pages/AdminTasks.jsx
+6:48:17 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+6:50:22 PM [vite] hmr update /src/App.jsx
+7:48:50 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+7:49:07 PM [vite] hmr update /src/contexts/ToastContext.jsx
+7:49:44 PM [vite] hmr update /src/components/ToastContainer.jsx
+7:49:55 PM [vite] hmr update /src/contexts/ToastContext.jsx
+
+6:48:17 PM [vite] hmr update /src/components/EmptyState.jsx
+6:48:17 PM [vite] hmr update /src/pages/AdminTasks.jsx
+6:48:17 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+6:50:22 PM [vite] hmr update /src/App.jsx
+6:50:23 PM [vite] hmr update /src/App.jsx
+7:48:50 PM [vite] hmr update /src/pages/UserAdminPage.jsx
+7:49:07 PM [vite] hmr update /src/contexts/ToastContext.jsx
+7:49:44 PM [vite] hmr update /src/components/ToastContainer.jsx
+7:49:55 PM [vite] hmr update /src/contexts/ToastContext.jsx

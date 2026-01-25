@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
+import Spinner from '../components/Spinner';
+import EmptyState from '../components/EmptyState';
+import AdminTasks from './AdminTasks';
 
 export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
@@ -10,7 +13,7 @@ export default function AdminDashboard() {
   const fetchSummary = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/admin/summary');
+      const res = await api.get('/admin/summary');
       setSummary(res.data);
     } catch (err) {
       console.error('Error fetching admin summary', err);
@@ -32,12 +35,18 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-          <Card title="Usuarios" value={summary?.db?.users ?? '—'} />
-          <Card title="Cursos" value={summary?.db?.courses ?? '—'} />
-          <Card title="Submissions" value={summary?.db?.submissions ?? '—'} />
-          <Card title="Migrations" value={summary?.db?.migrations ?? '—'} />
-        </div>
+        {loading ? (
+          <div className="mt-6"><Spinner message="Cargando resumen..." /></div>
+        ) : summary ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+            <Card title="Usuarios" value={summary?.db?.users ?? '—'} />
+            <Card title="Cursos" value={summary?.db?.courses ?? '—'} />
+            <Card title="Submissions" value={summary?.db?.submissions ?? '—'} />
+            <Card title="Migrations" value={summary?.db?.migrations ?? '—'} />
+          </div>
+        ) : (
+          <div className="mt-6"><EmptyState title="Sin datos" description="No se encontró información del sistema." /></div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
           <Card title="Foro (threads)" value={summary?.db?.forum_threads ?? '—'} />
@@ -63,9 +72,13 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex items-center justify-between">
           <h3 className="font-semibold">Health (raw)</h3>
+          <a href="/admin/users" className="px-3 py-2 bg-blue-600 text-white rounded">Administrar Usuarios</a>
           <pre className="mt-2 bg-gray-100 p-3 rounded">{summary ? JSON.stringify(summary, null, 2) : 'No data'}</pre>
+        </div>
+        <div className="mt-6">
+          <AdminTasks />
         </div>
       </div>
     </div>

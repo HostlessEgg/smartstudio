@@ -57,6 +57,16 @@ jobs:
           chmod +x ./scripts/run_migrations.sh
           ./scripts/run_migrations.sh
 
+      - name: Ensure supplemental schema (columns/tables)
+        working-directory: backend
+        env:
+          DB_HOST: ${{ env.DB_HOST }}
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_NAME: ${{ env.DB_NAME }}
+        run: |
+          node ./scripts/ensure_schema.js
+
       - name: Run backend seeders
         working-directory: backend
         run: |

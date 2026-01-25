@@ -10,6 +10,19 @@ jobs:
   test:
     name: Run unit tests and Playwright E2E
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: smartstudio_lms
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,6 +38,31 @@ jobs:
         run: |
           cd frontend
           npm ci
+
+      - name: Prepare and start backend for E2E
+        run: |
+          # Install backend deps, apply migrations and ensure supplemental schema
+          cd backend
+          npm ci
+          chmod +x ./scripts/run_migrations.sh
+          ./scripts/run_migrations.sh
+          node ./scripts/ensure_schema.js
+          # seed data used by tests
+          node ./scripts/seed_sample_data.js || true
+          node ./scripts/seed_additional_data.js || true
+          # start backend server in background bound to 0.0.0.0
+          HOST=0.0.0.0 FORCE_START=1 NODE_ENV=test nohup node server.js > ../backend-server.log 2>&1 &
+          # wait for health endpoint
+          for i in {1..30}; do
+            if curl -sSf "http://127.0.0.1:5000/health" >/dev/null 2>&1; then
+              echo "backend ready"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -sSf "http://127.0.0.1:5000/health" >/dev/null 2>&1; then
+            echo "Backend failed to start, logs:"; tail -n 200 ../backend-server.log || true; exit 1
+          fi
 
       - name: Install Playwright browsers
         run: |

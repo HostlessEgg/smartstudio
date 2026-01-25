@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import mockApi from '../lib/mockApi';
+import api from '../lib/api';
 
 const initialUsers = [
   { id: 1, name: 'Admin SmartStudio', email: 'admin@smartstudio.com', role: 'admin' },
@@ -11,6 +11,8 @@ const initialUsers = [
 
 export default function UserAdminPage() {
   const [users, setUsers] = useState(initialUsers);
+  const [meta, setMeta] = useState({ total: 0, total_pages: 1, page: 1, per_page: 20 });
+  const [statusFilter, setStatusFilter] = useState('all'); // all | active | inactive
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState([]);
@@ -20,18 +22,37 @@ export default function UserAdminPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', role: 'student', active: true });
 
-  useEffect(() => {
-    let mounted = true;
+  const fetchUsers = async (pageArg = 1, qArg = '') => {
     setLoading(true);
-    mockApi.getUsers().then(res => {
-      if (mounted && res) setUsers(res);
-    }).finally(()=>setLoading(false));
-    return () => { mounted = false };
-  }, []);
+    try {
+      const activeParam = statusFilter === 'all' ? undefined : (statusFilter === 'inactive' ? 0 : 1);
+      const res = await api.get('/users', { params: { page: pageArg, per_page: 20, q: qArg, active: activeParam } });
+      const data = res.data?.data || [];
+      const m = res.data?.meta || { total: data.length, total_pages: 1, page: 1, per_page: 20 };
+      setUsers(data);
+      setMeta(m);
+    } catch (e) {
+      // error surfaced by api interceptor toast
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filtered = users.filter(u => u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()));
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const pageItems = filtered.slice((page-1)*perPage, page*perPage);
+  useEffect(() => { fetchUsers(1, ''); }, []);
+
+  useEffect(() => {
+    // refetch when q changes, reset page
+    setPage(1);
+    const t = setTimeout(() => fetchUsers(1, q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    fetchUsers(page, q);
+  }, [page, statusFilter]);
+
+  const totalPages = meta?.total_pages || 1;
+  const pageItems = users;
 
   const openCreate = () => {
     setEditing(null);
@@ -48,20 +69,32 @@ export default function UserAdminPage() {
   const saveForm = async () => {
     if (!form.name || !form.email) { alert('Nombre y email requeridos'); return; }
     if (editing) {
-      const res = await mockApi.updateUser(editing, form);
-      if (res) setUsers(users.map(u => u.id === editing ? res : u));
+      try {
+        await api.put(`/users/${editing}`, { name: form.name });
+        if (form.role) {
+          await api.post(`/users/${editing}/role`, { role: form.role });
+        }
+        // refresh list
+        await fetchUsers(page, q);
+      } catch (e) { /* toast via interceptor */ }
     } else {
-      const res = await mockApi.createUser(form);
-      if (res) setUsers([...(users||[]), res]);
+      try {
+        const pwd = form.password || prompt('Ingrese password para el nuevo usuario (mínimo 8 caracteres):');
+        if (!pwd || pwd.length < 8) { alert('Password inválido'); return; }
+        await api.post('/auth/register', { name: form.name, email: form.email, password: pwd, role: form.role || 'student' });
+        await fetchUsers(page, q);
+      } catch (e) { /* toast via interceptor */ }
     }
     setModalOpen(false);
   };
 
   const removeUser = async (id) => {
-    if (!confirm('Eliminar usuario?')) return;
-    const res = await mockApi.deleteUser(id);
-    if (res) setUsers(users.filter(u => u.id !== id));
-    setSelected(selected.filter(sid => sid !== id));
+    if (!confirm('Desactivar usuario?')) return;
+    try {
+      await api.post('/users/bulk-deactivate', { ids: [id] });
+      await fetchUsers(page, q);
+      setSelected(selected.filter(sid => sid !== id));
+    } catch (e) { /* toast via interceptor */ }
   };
 
   const toggleSelect = (id) => {
@@ -80,20 +113,35 @@ export default function UserAdminPage() {
   const bulkAssignRole = async () => {
     const role = prompt('Asignar role a seleccionados:');
     if (!role) return;
-    for (const id of selected) {
-      const updated = await mockApi.updateUser(id, { role });
-      if (updated) setUsers(u => u.map(x => x.id === id ? updated : x));
-    }
-    alert('Roles actualizados (mock)');
+    if (!confirm(`Asignar role '${role}' a ${selected.length} usuarios?`)) return;
+    try {
+      const res = await api.post('/users/bulk-role', { ids: selected, role });
+      await fetchUsers(page, q);
+      const affected = res.data?.affected || 0;
+      window.dispatchEvent(new CustomEvent('app:toast', { detail: { type: 'success', message: `Roles actualizados (${affected})` } }));
+      // offer undo via toast action (simple): store last bulk action in sessionStorage
+      sessionStorage.setItem('last_bulk_action', JSON.stringify({ type: 'bulk_role', ids: selected, role }));
+    } catch (e) { /* toast via interceptor */ }
   };
 
   const bulkDeactivate = async () => {
-    if (!confirm('Desactivar usuarios seleccionados?')) return;
-    for (const id of selected) {
-      const updated = await mockApi.updateUser(id, { active: false });
-      if (updated) setUsers(u => u.map(x => x.id === id ? updated : x));
-    }
-    alert('Usuarios desactivados (mock)');
+    if (!confirm(`Desactivar ${selected.length} usuarios?`)) return;
+    try {
+      const res = await api.post('/users/bulk-deactivate', { ids: selected });
+      await fetchUsers(page, q);
+      const affected = res.data?.affected || 0;
+      window.dispatchEvent(new CustomEvent('app:toast', { detail: { type: 'success', message: `Usuarios desactivados (${affected})` } }));
+      sessionStorage.setItem('last_bulk_action', JSON.stringify({ type: 'bulk_deactivate', ids: selected }));
+    } catch (e) { /* toast via interceptor */ }
+  };
+
+  const bulkReactivate = async () => {
+    if (!selected.length) { alert('Selecciona usuarios'); return; }
+    try {
+      await api.post('/users/bulk-reactivate', { ids: selected });
+      await fetchUsers(page, q);
+      window.dispatchEvent(new CustomEvent('app:toast', { detail: { type: 'success', message: 'Usuarios reactivados' } }));
+    } catch (e) { /* toast via interceptor */ }
   };
 
   return (
@@ -103,6 +151,11 @@ export default function UserAdminPage() {
       <div className="mb-4 flex gap-2">
         <input aria-label="Buscar usuarios" className="border p-2 flex-1" placeholder="Buscar nombre o email" value={q} onChange={e=>{ setQ(e.target.value); setPage(1); }} />
         <Button className="bg-gray-200" onClick={()=>setQ('')}>Limpiar</Button>
+        <select aria-label="Filtrar estado" className="border p-2" value={statusFilter} onChange={e=>{ setStatusFilter(e.target.value); setPage(1); }}>
+          <option value="all">Todos</option>
+          <option value="active">Activos</option>
+          <option value="inactive">Inactivos</option>
+        </select>
         <Button className="bg-blue-600 text-white" onClick={openCreate}>Crear usuario</Button>
       </div>
 
@@ -110,6 +163,7 @@ export default function UserAdminPage() {
         <span className="text-sm">Acciones masivas:</span>
         <Button onClick={bulkAssignRole} className="text-sm">Asignar role</Button>
         <Button onClick={bulkDeactivate} className="text-sm text-red-600">Desactivar</Button>
+        <Button onClick={bulkReactivate} className="text-sm text-green-700">Reactivar</Button>
         <div className="ml-auto text-sm">Seleccionados: {selected.length}</div>
       </div>
 
@@ -134,7 +188,11 @@ export default function UserAdminPage() {
               <td className="p-2">{u.role}{u.active===false ? ' (inactivo)' : ''}</td>
               <td className="p-2">
                 <Button className="mr-2 text-sm text-blue-600" onClick={()=>openEdit(u)} ariaLabel={`Editar usuario ${u.id}`}>Editar</Button>
-                <Button className="text-sm text-red-600" onClick={()=>removeUser(u.id)} ariaLabel={`Eliminar usuario ${u.id}`}>Eliminar</Button>
+                {u.active === false ? (
+                  <Button className="text-sm text-green-700" onClick={async ()=>{ await api.post('/users/bulk-reactivate', { ids: [u.id] }); await fetchUsers(page, q); }} ariaLabel={`Reactivar usuario ${u.id}`}>Reactivar</Button>
+                ) : (
+                  <Button className="text-sm text-red-600" onClick={()=>removeUser(u.id)} ariaLabel={`Eliminar usuario ${u.id}`}>Desactivar</Button>
+                )}
               </td>
             </tr>
           ))}
@@ -159,6 +217,9 @@ export default function UserAdminPage() {
               <option value="observer">observer</option>
             </select>
           </label>
+          {!editing && (
+            <label className="flex flex-col"><span>Password</span><input type="password" className="border p-2" value={form.password || ''} onChange={e=>setForm({...form, password: e.target.value})} /></label>
+          )}
           <label className="flex items-center gap-2"><input type="checkbox" checked={form.active} onChange={e=>setForm({...form, active: e.target.checked})} /> Activo</label>
           <div className="flex gap-2 mt-2">
             <Button className="bg-blue-600 text-white" onClick={saveForm}>{editing ? 'Guardar cambios' : 'Crear usuario'}</Button>
