@@ -69,6 +69,29 @@ async function ensureSchema() {
       console.log('Table audits already exists');
     }
 
+    // Ensure teacher_activities table (id, course_id, title, description, due_at, attachments, created_by)
+    const teacherActivities = 'teacher_activities';
+    const taExists = await tableExists(connection, teacherActivities);
+    if (!taExists) {
+      console.log('Creating table teacher_activities');
+      await connection.execute(`
+        CREATE TABLE teacher_activities (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          course_id INT NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          due_at DATETIME NULL,
+          attachments JSON NULL,
+          created_by INT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    } else {
+      console.log('Table teacher_activities already exists');
+    }
+
     console.log('Schema ensure complete');
     await connection.end();
   } catch (err) {

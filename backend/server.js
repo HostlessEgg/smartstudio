@@ -663,6 +663,111 @@ app.get('/api/my-courses', authenticateToken, async (req, res) => {
     }
 });
 
+// Teacher courses (paginated, filter by q)
+app.get('/api/teacher/courses', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const userId = req.user.userId;
+    const isAdmin = req.user.role === 'admin';
+    let page = parseInt(req.query.page || '1', 10);
+    let per_page = parseInt(req.query.per_page || '20', 10);
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(per_page) || per_page < 1) per_page = 20;
+    per_page = Math.min(per_page, 100);
+    const offset = (page - 1) * per_page;
+    const q = req.query.q ? String(req.query.q).trim() : '';
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const params = [];
+        let where = 'WHERE 1=1';
+        if (!isAdmin) {
+            where += ' AND c.instructor_id = ?';
+            params.push(userId);
+        }
+        if (q) {
+            where += ' AND (c.title LIKE ? OR c.description LIKE ?)';
+            params.push(`%${q}%`, `%${q}%`);
+        }
+
+        const [countRows] = await connection.execute(`SELECT COUNT(*) as total FROM courses c ${where}`, params);
+        const total = countRows && countRows[0] ? Number(countRows[0].total || 0) : 0;
+        const total_pages = Math.max(1, Math.ceil(total / per_page));
+
+        const dataSql = `SELECT c.*, u.name as instructor_name FROM courses c LEFT JOIN users u ON c.instructor_id = u.id ${where} ORDER BY c.created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
+        const [rows] = await connection.execute(dataSql, params);
+        await connection.end();
+        res.json({ meta: { total, total_pages, page, per_page }, data: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error getting teacher courses:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Teacher activities
+app.get('/api/teacher/activities', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const courseId = req.query.course_id;
+    if (!courseId) return res.status(400).json({ error: 'course_id requerido' });
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        // verify ownership for teachers
+        if (req.user.role === 'teacher') {
+            const [c] = await connection.execute('SELECT id FROM courses WHERE id = ? AND instructor_id = ?', [courseId, req.user.userId]);
+            if (!c || c.length === 0) {
+                await connection.end();
+                return res.status(403).json({ error: 'No autorizado para este curso' });
+            }
+        }
+        const [rows] = await connection.execute(
+            'SELECT * FROM teacher_activities WHERE course_id = ? ORDER BY created_at DESC',
+            [courseId]
+        );
+        await connection.end();
+        res.json(rows);
+    } catch (err) {
+        await connection.end();
+        console.error('Error getting teacher activities:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.post('/api/teacher/activities', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const { course_id, title, description, due_at, attachments } = req.body;
+    if (!course_id || !title) return res.status(400).json({ error: 'course_id y title son requeridos' });
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        // verify ownership for teachers
+        if (req.user.role === 'teacher') {
+            const [c] = await connection.execute('SELECT id FROM courses WHERE id = ? AND instructor_id = ?', [course_id, req.user.userId]);
+            if (!c || c.length === 0) {
+                await connection.end();
+                return res.status(403).json({ error: 'No autorizado para este curso' });
+            }
+        }
+
+        let due = null;
+        if (due_at) {
+            const d = new Date(due_at);
+            if (!isNaN(d.getTime())) {
+                due = d.toISOString().slice(0, 19).replace('T', ' ');
+            }
+        }
+
+        const attachmentsJson = attachments ? JSON.stringify(attachments) : null;
+        const [insertRes] = await connection.execute(
+            'INSERT INTO teacher_activities (course_id, title, description, due_at, attachments, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+            [course_id, title, description || null, due, attachmentsJson, req.user.userId]
+        );
+        const activityId = insertRes.insertId;
+        await logAudit(req, 'teacher_create_activity', 'teacher_activities', activityId, { course_id, title });
+        await connection.end();
+        res.status(201).json({ id: activityId, message: 'Actividad creada' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error creando actividad:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 app.get('/api/courses/:id', async (req, res) => {
     try {
         const connection = await mysql.createConnection(dbConfig);

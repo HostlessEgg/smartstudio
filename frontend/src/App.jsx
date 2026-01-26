@@ -34,6 +34,7 @@ import CalendarAdmin from './pages/CalendarAdmin';
 import MySubmissionsPage from './pages/MySubmissionsPage';
 import CertificateView from './pages/CertificateView';
 import TeacherSubjects from './pages/TeacherSubjects';
+import TeacherCourses from './pages/TeacherCourses';
 import StudentSubjects from './pages/StudentSubjects';
 import './App.css';
 
@@ -189,6 +190,11 @@ function App() {
                 <TeacherSubjects />
               </ProtectedRoute>
             } />
+            <Route path="/teacher/courses" element={
+              <ProtectedRoute allowedRoles={["teacher"]}>
+                <TeacherCourses />
+              </ProtectedRoute>
+            } />
             <Route path="/teacher/submissions" element={
               <ProtectedRoute allowedRoles={["teacher"]}>
                 <SubmissionInbox />
@@ -261,7 +267,10 @@ function AppHeader() {
             </>
           )}
           {user && user.role === 'teacher' && (
-            <Link to="/teacher/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
+            <>
+              <Link to="/teacher/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
+              <Link to="/teacher/courses" className="text-sm text-gray-600 hover:text-gray-900">Mis Cursos</Link>
+            </>
           )}
           {user && user.role === 'student' && (
             <Link to="/student/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
