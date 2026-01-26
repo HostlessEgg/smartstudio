@@ -36,6 +36,7 @@ import CertificateView from './pages/CertificateView';
 import TeacherSubjects from './pages/TeacherSubjects';
 import TeacherCourses from './pages/TeacherCourses';
 import StudentSubjects from './pages/StudentSubjects';
+import StudentAssignments from './pages/StudentAssignments';
 import './App.css';
 
 function ProtectedRoute({ children, allowedRoles = [] }) {
@@ -210,6 +211,11 @@ function App() {
                 <StudentSubjects />
               </ProtectedRoute>
             } />
+            <Route path="/student/assignments" element={
+              <ProtectedRoute allowedRoles={["student"]}>
+                <StudentAssignments />
+              </ProtectedRoute>
+            } />
             <Route path="/my/progress" element={
               <ProtectedRoute allowedRoles={["student"]}>
                 <MyProgressPage />
@@ -273,7 +279,11 @@ function AppHeader() {
             </>
           )}
           {user && user.role === 'student' && (
-            <Link to="/student/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
+            <>
+              <Link to="/student/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
+              <Link to="/student/assignments" className="text-sm text-gray-600 hover:text-gray-900">Mis Tareas</Link>
+              <Link to="/my/submissions" className="text-sm text-gray-600 hover:text-gray-900">Mis Entregas</Link>
+            </>
           )}
           {user && (user.role === 'teacher' || user.role === 'admin') && (
             <Link to="/course-structure" className="text-sm text-gray-600 hover:text-gray-900">Editor de Curso</Link>

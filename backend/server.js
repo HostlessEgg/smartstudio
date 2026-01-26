@@ -1153,6 +1153,39 @@ app.get('/api/assignments', authenticateToken, async (req, res) => {
     }
 });
 
+// Assignments para el estudiante autenticado, con estado de entrega
+app.get('/api/my/assignments', authenticateToken, async (req, res) => {
+    const studentId = req.user.userId;
+    const gradeId = req.query.gradeId || req.user.grade_id || null;
+    const subjectId = req.query.subjectId || null;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        let sql = `SELECT a.*, g.name as grade_name, s.name as subject_name,
+                   sub.id as submission_id, sub.score, sub.feedback, sub.created_at as submitted_at
+                   FROM assignments a
+                   LEFT JOIN curriculum_grades g ON a.grade_id = g.id
+                   LEFT JOIN subjects s ON a.subject_id = s.id
+                   LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = ?
+                   WHERE 1=1`;
+        const params = [studentId];
+        if (gradeId) { sql += ' AND a.grade_id = ?'; params.push(gradeId); }
+        if (subjectId) { sql += ' AND a.subject_id = ?'; params.push(subjectId); }
+        sql += ' ORDER BY a.start_at ASC';
+
+        const [rows] = await connection.execute(sql, params);
+        const mapped = rows.map(r => ({
+            ...r,
+            status: r.submission_id ? 'submitted' : 'pending'
+        }));
+        await connection.end();
+        res.json(mapped);
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo assignments del estudiante:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Crear assignment (teacher/admin)
 app.post('/api/assignments', authenticateToken, authorizeRoles(['teacher','admin']), [
     check('title').isString().notEmpty(),
@@ -1277,6 +1310,29 @@ app.get('/api/submissions/:id', authenticateToken, async (req, res) => {
     } catch (err) {
         await connection.end();
         console.error('Error fetching submission:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// List submissions of current student (optional filter by assignment_id)
+app.get('/api/my/submissions', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const assignmentId = req.query.assignment_id ? Number(req.query.assignment_id) : null;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        let sql = `SELECT s.*, a.title as assignment_title FROM submissions s LEFT JOIN assignments a ON s.assignment_id = a.id WHERE s.student_id = ?`;
+        const params = [userId];
+        if (assignmentId) {
+            sql += ' AND s.assignment_id = ?';
+            params.push(assignmentId);
+        }
+        sql += ' ORDER BY s.created_at DESC';
+        const [rows] = await connection.execute(sql, params);
+        await connection.end();
+        res.json(rows);
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo submissions del estudiante:', err);
         res.status(500).json({ error: 'Error interno' });
     }
 });
