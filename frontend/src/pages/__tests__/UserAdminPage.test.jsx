@@ -1,22 +1,22 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import UserAdminPage from '../UserAdminPage';
-import mockApi from '../../lib/mockApi';
+import api from '../../lib/api';
 
-vi.mock('../../lib/mockApi', () => ({
+vi.mock('../../lib/api', () => ({
   default: {
-    getUsers: vi.fn().mockResolvedValue([{ id: 1, name: 'Admin SmartStudio', email: 'admin@smartstudio.com', role: 'admin' }]),
-    createUser: vi.fn().mockResolvedValue({ id: 99, name: 'Test User', email: 'test@example.com', role: 'student' }),
-    updateUser: vi.fn().mockResolvedValue({ id:1, name: 'Admin SmartStudio', email: 'admin@smartstudio.com', role: 'admin' }),
-    deleteUser: vi.fn().mockResolvedValue({ success: true })
-  }
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+  },
 }));
 
 describe('UserAdminPage', () => {
   it('renders existing users and can create a new user (mock)', async () => {
+    // initial fetch returns existing users
+    api.get.mockResolvedValueOnce({ data: { data: [ { id: 1, name: 'Admin SmartStudio', email: 'admin@smartstudio.com', role: 'admin' } ], meta: { total: 1, total_pages: 1, page: 1, per_page: 20 } } });
     render(<UserAdminPage />);
 
-    // wait for initial user to appear
     await waitFor(() => expect(screen.getByText('Admin SmartStudio')).toBeInTheDocument());
 
     // open create modal (the header button)
@@ -31,6 +31,15 @@ describe('UserAdminPage', () => {
 
     fireEvent.change(nameInput, { target: { value: 'Test User' } });
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
+    const pwdInput = within(dialog).getByLabelText('Password');
+    fireEvent.change(pwdInput, { target: { value: 'password123' } });
+
+    // mock register call and subsequent refetch including the new user
+    api.post.mockResolvedValueOnce({ data: { id: 99, name: 'Test User', email: 'test@example.com', role: 'student' } });
+    api.get.mockResolvedValueOnce({ data: { data: [
+      { id: 1, name: 'Admin SmartStudio', email: 'admin@smartstudio.com', role: 'admin' },
+      { id: 99, name: 'Test User', email: 'test@example.com', role: 'student' }
+    ], meta: { total: 2, total_pages: 1, page: 1, per_page: 20 } } });
 
     fireEvent.click(createButton);
 
@@ -39,9 +48,8 @@ describe('UserAdminPage', () => {
   });
 
   it('can edit and delete a user', async () => {
-    // ensure updateUser will return the edited name
-    mockApi.updateUser.mockResolvedValue({ id:1, name: 'Admin Edited', email: 'admin@smartstudio.com', role: 'admin', active: true });
-
+    // initial list
+    api.get.mockResolvedValueOnce({ data: { data: [ { id: 1, name: 'Admin SmartStudio', email: 'admin@smartstudio.com', role: 'admin', active: true } ], meta: { total: 1, total_pages: 1, page: 1, per_page: 20 } } });
     render(<UserAdminPage />);
     await waitFor(() => expect(screen.getByText('Admin SmartStudio')).toBeInTheDocument());
 
@@ -54,6 +62,10 @@ describe('UserAdminPage', () => {
     const saveBtn = within(dialog).getByRole('button', { name: /Guardar cambios|Crear usuario/ });
 
     fireEvent.change(nameInput, { target: { value: 'Admin Edited' } });
+    // mock edit calls and subsequent refetch
+    api.put.mockResolvedValueOnce({ data: { id: 1 } });
+    api.post.mockResolvedValueOnce({ data: { ok: true } }); // role update
+    api.get.mockResolvedValueOnce({ data: { data: [ { id: 1, name: 'Admin Edited', email: 'admin@smartstudio.com', role: 'admin', active: true } ], meta: { total: 1 } } });
     fireEvent.click(saveBtn);
 
     await waitFor(() => expect(screen.getByText('Admin Edited')).toBeInTheDocument());
@@ -61,6 +73,9 @@ describe('UserAdminPage', () => {
     // delete flow: confirm and delete
     vi.spyOn(window, 'confirm').mockImplementation(() => true);
     const deleteButtons = screen.getAllByRole('button', { name: /Eliminar usuario/i });
+    // mock bulk-deactivate and subsequent refetch with empty list
+    api.post.mockResolvedValueOnce({ data: { affected: 1 } });
+    api.get.mockResolvedValueOnce({ data: { data: [], meta: { total: 0 } } });
     fireEvent.click(deleteButtons[0]);
     await waitFor(() => expect(screen.queryByText('Admin Edited')).not.toBeInTheDocument());
     window.confirm.mockRestore && window.confirm.mockRestore();
