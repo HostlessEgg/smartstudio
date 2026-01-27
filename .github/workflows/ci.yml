@@ -56,7 +56,7 @@ jobs:
         working-directory: backend
         run: |
           chmod +x ./scripts/run_migrations.sh
-          ./scripts/run_migrations.sh
+          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME ./scripts/run_migrations.sh
 
       - name: Ensure supplemental schema (columns/tables)
         working-directory: backend

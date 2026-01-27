@@ -18,13 +18,14 @@ jobs:
         image: mysql:8
         env:
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: smartstudio_lms
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
           --health-interval=5s
-          --health-timeout=10s
-          --health-retries=10
+          --health-timeout=5s
+          --health-retries=20
 
     steps:
       - name: Checkout
@@ -48,14 +49,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y default-mysql-client
 
       - name: Import database schema
-        run: mysql -h 127.0.0.1 -uroot -proot < database/schema.sql
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: smartstudio_lms
+        run: |
+          mysql -h "$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < database/schema.sql
 
       - name: Install backend deps
         run: |
           cd backend
           npm install
-      
-      - name: Apply DB migrations and ensure schema
+
+      - name: Apply DB migrations, ensure schema, seed
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -64,12 +71,8 @@ jobs:
         run: |
           cd backend
           chmod +x ./scripts/run_migrations.sh
-          ./scripts/run_migrations.sh
+          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME ./scripts/run_migrations.sh
           node ./scripts/ensure_schema.js
-
-      - name: Seed sample data (best effort)
-        run: |
-          cd backend
           node scripts/seed_sample_data.js || true
           node scripts/seed_additional_data.js || true
 
