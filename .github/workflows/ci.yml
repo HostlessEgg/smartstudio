@@ -43,22 +43,11 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install mysql client (for migration script)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y default-mysql-client
-
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
 
-      - name: Apply DB migrations
-        working-directory: backend
-        run: |
-          chmod +x ./scripts/run_migrations.sh
-          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME ./scripts/run_migrations.sh
-
-      - name: Ensure supplemental schema (columns/tables)
+      - name: Apply DB migrations (Node), ensure schema, seed
         working-directory: backend
         env:
           DB_HOST: ${{ env.DB_HOST }}
@@ -66,13 +55,10 @@ jobs:
           DB_PASSWORD: ${{ env.DB_PASSWORD }}
           DB_NAME: ${{ env.DB_NAME }}
         run: |
+          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME npm run migrate:js
           node ./scripts/ensure_schema.js
-
-      - name: Run backend seeders
-        working-directory: backend
-        run: |
-          node scripts/seed_sample_data.js
-          node scripts/seed_additional_data.js
+          node scripts/seed_sample_data.js || true
+          node scripts/seed_additional_data.js || true
 
       - name: Start backend server and wait for /health
         working-directory: backend

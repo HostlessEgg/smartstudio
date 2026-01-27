@@ -45,24 +45,12 @@ jobs:
             echo "Waiting for MySQL... ($i)"; sleep 2
           done
 
-      - name: Install mysql client
-        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
-
-      - name: Import database schema
-        env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: smartstudio_lms
-        run: |
-          mysql -h "$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < database/schema.sql
-
       - name: Install backend deps
         run: |
           cd backend
           npm install
 
-      - name: Apply DB migrations, ensure schema, seed
+      - name: Apply DB migrations (Node), ensure schema, seed
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -70,8 +58,7 @@ jobs:
           DB_NAME: smartstudio_lms
         run: |
           cd backend
-          chmod +x ./scripts/run_migrations.sh
-          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME ./scripts/run_migrations.sh
+          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME npm run migrate:js
           node ./scripts/ensure_schema.js
           node scripts/seed_sample_data.js || true
           node scripts/seed_additional_data.js || true
