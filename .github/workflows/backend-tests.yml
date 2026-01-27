@@ -81,9 +81,10 @@ jobs:
           DB_NAME: smartstudio_lms
           RATE_LIMITS_DISABLED: '1'
           NODE_ENV: test
+          JWT_SECRET: test_secret
         run: |
           cd backend
-          HOST=0.0.0.0 FORCE_START=1 RATE_LIMITS_DISABLED=$RATE_LIMITS_DISABLED NODE_ENV=$NODE_ENV nohup node server.js > server.log 2>&1 &
+          HOST=0.0.0.0 FORCE_START=1 RATE_LIMITS_DISABLED=$RATE_LIMITS_DISABLED NODE_ENV=$NODE_ENV JWT_SECRET=$JWT_SECRET nohup node server.js > server.log 2>&1 &
           export TEST_BASE_URL=http://127.0.0.1:5000
           for i in {1..30}; do
             if curl -sSf "$TEST_BASE_URL/api/health" >/dev/null 2>&1; then

@@ -32,6 +32,7 @@ jobs:
       NODE_ENV: test
       NODE_OPTIONS: '--dns-result-order=ipv4first'
       TEST_BASE_URL: 'http://127.0.0.1:5000'
+      JWT_SECRET: test_secret
 
     steps:
       - name: Checkout
@@ -77,7 +78,7 @@ jobs:
         working-directory: backend
         run: |
           # Start server bound to 0.0.0.0 and allow test-mode start, disable rate limits
-          HOST=0.0.0.0 FORCE_START=1 NODE_ENV=test RATE_LIMITS_DISABLED=1 nohup node server.js > server.log 2>&1 &
+          HOST=0.0.0.0 FORCE_START=1 NODE_ENV=test RATE_LIMITS_DISABLED=1 JWT_SECRET=$JWT_SECRET nohup node server.js > server.log 2>&1 &
           # prefer IPv4 for test runner to avoid ::1/localhost ambiguity
           export NODE_OPTIONS=--dns-result-order=ipv4first
           export TEST_BASE_URL=http://127.0.0.1:5000
