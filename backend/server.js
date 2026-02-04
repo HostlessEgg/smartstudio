@@ -503,6 +503,79 @@ if (process.env.NODE_ENV === 'development') {
     });
 }
 
+// Import users from CSV (admin)
+app.post('/api/admin/import/users', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const { csv } = req.body;
+    if (!csv) return res.status(400).json({ error: 'csv requerido en body' });
+
+    const allowedRoles = new Set(['student', 'teacher', 'admin', 'guest']);
+    const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return res.status(400).json({ error: 'csv vacío' });
+
+    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const hasHeader = header.includes('email') || header.includes('name') || header.includes('role') || header.includes('password');
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+
+    const connection = await mysql.createConnection(dbConfig);
+    const report = { imported: 0, skipped: 0, errors: [], temp_passwords: [] };
+    try {
+        for (const [idx, line] of dataLines.entries()) {
+            const cols = line.split(',').map(p => p.trim());
+            const rowIndex = hasHeader ? idx + 2 : idx + 1;
+
+            let name = cols[0] || '';
+            let email = cols[1] || '';
+            let role = cols[2] || 'student';
+            let password = cols[3] || '';
+
+            if (hasHeader) {
+                name = cols[header.indexOf('name')] || '';
+                email = cols[header.indexOf('email')] || '';
+                role = cols[header.indexOf('role')] || 'student';
+                password = cols[header.indexOf('password')] || '';
+            }
+
+            if (!email || !name) {
+                report.skipped++;
+                report.errors.push({ line: rowIndex, error: 'name/email requeridos' });
+                continue;
+            }
+
+            if (!allowedRoles.has(role)) role = 'student';
+
+            let tempPassword = null;
+            if (!password) {
+                tempPassword = `Temp#${Math.random().toString(36).slice(2, 8)}A1`;
+                password = tempPassword;
+            }
+
+            const hashed = await bcrypt.hash(password, 10);
+
+            const [existing] = await connection.execute('SELECT id FROM users WHERE email = ?', [email]);
+            if (existing.length > 0) {
+                report.skipped++;
+                report.errors.push({ line: rowIndex, email, error: 'email ya existe' });
+                continue;
+            }
+
+            await connection.execute(
+                'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+                [name, email, hashed, role]
+            );
+            report.imported++;
+            if (tempPassword) report.temp_passwords.push({ email, password: tempPassword });
+        }
+
+        await logAudit(req, 'import_users_csv', 'user', null, { report: { imported: report.imported, skipped: report.skipped, errors: report.errors } });
+        await connection.end();
+        res.json({ message: 'Importación completada', report });
+    } catch (err) {
+        await connection.end();
+        console.error('Error importando usuarios:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Actualizar perfil (propio o Admin)
 app.put('/api/users/:id', authenticateToken, async (req, res) => {
     const id = Number(req.params.id);

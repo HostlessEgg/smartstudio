@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import mockApi from '../lib/mockApi';
+import api from '../lib/api';
+import { useToast } from '../contexts/ToastContext';
 
 export default function BulkImportPage(){
   const [fileName, setFileName] = useState(null);
   const [preview, setPreview] = useState([]);
+  const [report, setReport] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const { addToast } = useToast();
 
   const onFile = async (e) => {
     const f = e.target.files[0];
@@ -13,38 +17,73 @@ export default function BulkImportPage(){
     const text = await f.text();
     const lines = text.split('\n').slice(0,10);
     setPreview(lines.map((l,i)=>({ line: i+1, text: l })));
+    setReport(null);
   };
 
-  const onSubmit = () => {
-    // try to POST preview lines to mock import endpoint
-    const payload = preview.map(p=>p.text);
-    mockApi.importData(payload).then(r=>{
-      alert(`Mock import result: ${r ? r.message : 'no server'}`);
-    });
+  const onSubmit = async () => {
+    if (!fileName || preview.length === 0) {
+      addToast('Selecciona un CSV primero', { type: 'error' });
+      return;
+    }
+    setUploading(true);
+    try {
+      const csv = preview.map(p => p.text).join('\n');
+      const res = await api.post('/admin/import/users', { csv });
+      const rep = res.data?.report;
+      setReport(rep || null);
+      addToast(res.data?.message || 'Importación completada', { type: 'success' });
+    } catch (e) {
+      // toast via interceptor
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Importación Masiva (CSV) - Mock</h2>
-      <p className="text-sm text-gray-600 mb-4">Sube un CSV para previsualizar las primeras líneas antes de ejecutar la importación.</p>
-
-      <div className="mb-4">
-        <input type="file" accept=".csv" onChange={onFile} />
-        {fileName && <div className="mt-2 text-sm">Archivo: {fileName}</div>}
-      </div>
-
-      {preview.length > 0 && (
-        <div className="mb-4">
-          <h3 className="font-medium">Previsualización (primeras 10 líneas)</h3>
-          <pre className="bg-gray-100 p-2 mt-2 max-h-48 overflow-auto">
-            {preview.map(p=>`${p.line}: ${p.text}\n`)}
-          </pre>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div>
+          <h2 className="section-title">Importación Masiva (CSV)</h2>
+          <p className="section-subtitle">Previsualiza las primeras líneas antes de importar.</p>
         </div>
-      )}
 
-      <div>
-        <button className="btn btn-primary mr-2" onClick={onSubmit}>Procesar import (mock)</button>
-        <button className="btn" onClick={() => { setPreview([]); setFileName(null); }}>Limpiar</button>
+        <div style={{ marginTop: 16 }}>
+          <input type="file" accept=".csv" onChange={onFile} className="input" />
+          {fileName && <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Archivo: {fileName}</div>}
+        </div>
+
+        {preview.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ fontWeight: 600 }}>Previsualización (primeras 10 líneas)</h3>
+            <pre className="card-muted" style={{ padding: 12, marginTop: 8, maxHeight: 200, overflow: 'auto', border: '1px solid var(--border)' }}>
+              {preview.map(p=>`${p.line}: ${p.text}\n`)}
+            </pre>
+          </div>
+        )}
+
+        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn-primary" onClick={onSubmit} disabled={uploading}><span className="btn-icon" aria-hidden="true">✔</span><span className="btn-label">{uploading ? 'Procesando...' : 'Procesar importación'}</span></button>
+          <button className="btn-ghost" onClick={() => { setPreview([]); setFileName(null); }}>Limpiar</button>
+        </div>
+
+        {report && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ fontWeight: 600 }}>Resultado</h3>
+            <div className="card-muted" style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)' }}>
+              <div>Importados: {report.imported || 0}</div>
+              <div>Saltados: {report.skipped || 0}</div>
+              {report.errors && report.errors.length > 0 && (
+                <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', fontSize: 12 }}>{JSON.stringify(report.errors, null, 2)}</pre>
+              )}
+              {report.temp_passwords && report.temp_passwords.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontWeight: 600 }}>Contraseñas temporales</div>
+                  <pre style={{ marginTop: 6, whiteSpace: 'pre-wrap', fontSize: 12 }}>{JSON.stringify(report.temp_passwords, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
