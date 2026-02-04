@@ -431,6 +431,52 @@ app.get('/api/admin/audits', authenticateToken, authorizeRoles(['admin']), async
     }
 });
 
+// Export audits as CSV (admin)
+app.get('/api/admin/audits/export', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const { q, action } = req.query;
+    try {
+        const connection = await mysql.createConnection(dbConfig);
+        let where = ' WHERE 1=1';
+        const params = [];
+        if (action) { where += ' AND action = ?'; params.push(action); }
+        if (q) { where += ' AND (entity LIKE ? OR details LIKE ? OR ip LIKE ? )'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+
+        const [rows] = await connection.execute(
+            `SELECT id, user_id, action, entity, entity_id, details, ip, created_at FROM audits ${where} ORDER BY created_at DESC`,
+            params
+        );
+        await connection.end();
+
+        const escapeCsv = (value) => {
+            const str = value === null || value === undefined ? '' : String(value);
+            if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+            return str;
+        };
+
+        const header = ['id', 'user_id', 'action', 'entity', 'entity_id', 'details', 'ip', 'created_at'];
+        const lines = [header.join(',')];
+        for (const r of rows) {
+            lines.push([
+                r.id,
+                r.user_id,
+                r.action,
+                r.entity,
+                r.entity_id,
+                r.details,
+                r.ip,
+                r.created_at
+            ].map(escapeCsv).join(','));
+        }
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="audits.csv"');
+        res.send(lines.join('\n'));
+    } catch (err) {
+        console.error('Error exportando auditoría:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Admin actions runner (minimal): Accepts { actions: ['id1','id2'] }
 // In development allow unauthenticated calls for convenience; in production require admin auth.
 if (process.env.NODE_ENV === 'development') {
