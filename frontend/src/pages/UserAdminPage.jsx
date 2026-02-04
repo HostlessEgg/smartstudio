@@ -29,6 +29,10 @@ export default function UserAdminPage() {
   const confirmActionRef = useRef(null);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [roleInput, setRoleInput] = useState('');
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetUser, setResetUser] = useState(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
   const { addToast } = useToast();
 
   const fetchUsers = async (pageArg = 1, qArg = '') => {
@@ -166,6 +170,25 @@ export default function UserAdminPage() {
     } catch (e) { /* toast via interceptor */ }
   };
 
+  const openReset = (u) => {
+    setResetUser(u);
+    setResetPassword('');
+    setResetModalOpen(true);
+  };
+
+  const submitReset = async () => {
+    if (!resetUser) return;
+    const pwd = resetPassword.trim();
+    if (!pwd || pwd.length < 8) { addToast('Contraseña inválida (mínimo 8 caracteres)', { type: 'error' }); return; }
+    setResetting(true);
+    try {
+      await api.post(`/users/${resetUser.id}/reset-password`, { password: pwd });
+      addToast('Contraseña actualizada', { type: 'success' });
+      setResetModalOpen(false);
+    } catch (e) { /* toast via interceptor */ }
+    finally { setResetting(false); }
+  };
+
   return (
     <div className="page">
       <div className="card" style={{ padding: 24 }}>
@@ -225,6 +248,7 @@ export default function UserAdminPage() {
                   <td>{u.role}{u.active===false ? ' (inactivo)' : ''}</td>
                   <td>
                     <Button variant="ghost" className="mr-2 text-sm" onClick={()=>openEdit(u)} ariaLabel={`Editar usuario ${u.id}`}>Editar</Button>
+                    <Button variant="ghost" className="mr-2 text-sm" onClick={()=>openReset(u)} ariaLabel={`Resetear contraseña ${u.id}`} icon="↻">Reset</Button>
                     {u.active === false ? (
                       <Button variant="secondary" className="text-sm" onClick={async ()=>{ await api.post('/users/bulk-reactivate', { ids: [u.id] }); await fetchUsers(page, q); }} ariaLabel={`Reactivar usuario ${u.id}`} icon="✔">Reactivar</Button>
                     ) : (
@@ -281,6 +305,19 @@ export default function UserAdminPage() {
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <Button onClick={submitBulkRole} icon="✔">Aplicar</Button>
               <Button variant="ghost" onClick={()=>setRoleModalOpen(false)}>Cancelar</Button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal open={resetModalOpen} onClose={()=>setResetModalOpen(false)} title="Resetear contraseña" ariaLabel="Resetear contraseña">
+          <div className="grid grid-cols-1 gap-2">
+            <div className="muted" style={{ fontSize: 12 }}>Usuario: {resetUser?.name} ({resetUser?.email})</div>
+            <label className="label">Nueva contraseña
+              <input type="password" className="input" value={resetPassword} onChange={e=>setResetPassword(e.target.value)} placeholder="mínimo 8 caracteres" />
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <Button onClick={submitReset} icon="✔" disabled={resetting}>{resetting ? 'Guardando...' : 'Guardar'}</Button>
+              <Button variant="ghost" onClick={()=>setResetModalOpen(false)}>Cancelar</Button>
             </div>
           </div>
         </Modal>

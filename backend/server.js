@@ -505,6 +505,29 @@ app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ 
     }
 });
 
+// Resetear contraseña de un usuario (solo Admin)
+app.post('/api/users/:id/reset-password', authenticateToken, authorizeRoles(['admin']), [
+    check('password').isLength({ min: 8 }).withMessage('password mínimo 8 caracteres')
+], async (req, res) => {
+    const id = Number(req.params.id);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const { password } = req.body;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const hashed = await bcrypt.hash(password, 10);
+        const [resUpd] = await connection.execute('UPDATE users SET password = ? WHERE id = ?', [hashed, id]);
+        await logAudit(req, 'reset_user_password', 'user', id, { affectedRows: resUpd?.affectedRows || 0 });
+        await connection.end();
+        res.json({ message: 'Contraseña actualizada' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error reseteando contraseña:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Acciones masivas: asignar role a múltiples usuarios (solo Admin)
 app.post('/api/users/bulk-role', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
     try {
