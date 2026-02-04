@@ -1155,13 +1155,14 @@ app.get('/api/curriculum', async (req, res) => {
 
 // Listar assignments, opcionalmente filtrar por gradeId, subjectId, rango de fechas
 app.get('/api/assignments', authenticateToken, async (req, res) => {
-    const { gradeId, subjectId, from, to } = req.query;
+    const { gradeId, subjectId, from, to, created_by } = req.query;
     const connection = await mysql.createConnection(dbConfig);
     try {
         let sql = 'SELECT a.*, g.name as grade_name, s.name as subject_name, u.name as author_name FROM assignments a LEFT JOIN curriculum_grades g ON a.grade_id = g.id LEFT JOIN subjects s ON a.subject_id = s.id LEFT JOIN users u ON a.created_by = u.id WHERE 1=1';
         const params = [];
         if (gradeId) { sql += ' AND a.grade_id = ?'; params.push(gradeId); }
         if (subjectId) { sql += ' AND a.subject_id = ?'; params.push(subjectId); }
+        if (created_by) { sql += ' AND a.created_by = ?'; params.push(created_by); }
         if (from) { sql += ' AND a.start_at >= ?'; params.push(from); }
         if (to) { sql += ' AND a.start_at <= ?'; params.push(to); }
         sql += ' ORDER BY a.start_at ASC';
