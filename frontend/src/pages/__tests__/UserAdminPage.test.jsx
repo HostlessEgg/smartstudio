@@ -31,7 +31,7 @@ describe('UserAdminPage', () => {
 
     fireEvent.change(nameInput, { target: { value: 'Test User' } });
     fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
-    const pwdInput = within(dialog).getByLabelText('Password');
+    const pwdInput = within(dialog).getByLabelText('Contraseña');
     fireEvent.change(pwdInput, { target: { value: 'password123' } });
 
     // mock register call and subsequent refetch including the new user
@@ -71,13 +71,13 @@ describe('UserAdminPage', () => {
     await waitFor(() => expect(screen.getByText('Admin Edited')).toBeInTheDocument());
 
     // delete flow: confirm and delete
-    vi.spyOn(window, 'confirm').mockImplementation(() => true);
     const deleteButtons = screen.getAllByRole('button', { name: /Eliminar usuario/i });
     // mock bulk-deactivate and subsequent refetch with empty list
     api.post.mockResolvedValueOnce({ data: { affected: 1 } });
     api.get.mockResolvedValueOnce({ data: { data: [], meta: { total: 0 } } });
     fireEvent.click(deleteButtons[0]);
+    const confirmBtn = await screen.findByRole('button', { name: /Confirmar/i });
+    fireEvent.click(confirmBtn);
     await waitFor(() => expect(screen.queryByText('Admin Edited')).not.toBeInTheDocument());
-    window.confirm.mockRestore && window.confirm.mockRestore();
   });
 });
