@@ -8,16 +8,26 @@ import AdminTasks from './AdminTasks';
 export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [health, setHealth] = useState({ status: 'unknown', message: '', checkedAt: null });
   const { addToast } = useToast();
 
   const fetchSummary = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin/summary');
-      setSummary(res.data);
+      const [summaryRes, healthRes] = await Promise.all([
+        api.get('/admin/summary'),
+        api.get('/health')
+      ]);
+      setSummary(summaryRes.data);
+      setHealth({
+        status: healthRes.data?.status === 'OK' ? 'ok' : 'warn',
+        message: healthRes.data?.message || 'Sin mensaje',
+        checkedAt: new Date()
+      });
     } catch (err) {
       console.error('Error fetching admin summary', err);
       addToast('No se pudo obtener resumen admin', { type: 'error' });
+      setHealth({ status: 'error', message: 'No se pudo consultar health', checkedAt: new Date() });
     } finally {
       setLoading(false);
     }
@@ -26,58 +36,79 @@ export default function AdminDashboard() {
   useEffect(() => { fetchSummary(); }, []);
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Panel administrador</h2>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <button onClick={fetchSummary} className="px-3 py-2 bg-purple-600 text-white rounded">{loading ? 'Cargando...' : 'Actualizar'}</button>
+            <h2 className="section-title">Panel administrador</h2>
+            <p className="section-subtitle">Resumen del sistema y accesos clave.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={fetchSummary} className="btn-primary">{loading ? 'Cargando...' : 'Actualizar'}</button>
+            <a href="/admin/users" className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center' }}>Administrar Usuarios</a>
           </div>
         </div>
 
         {loading ? (
-          <div className="mt-6"><Spinner message="Cargando resumen..." /></div>
+          <div style={{ marginTop: 16 }}><Spinner message="Cargando resumen..." /></div>
         ) : summary ? (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+          <div className="grid-3" style={{ marginTop: 16 }}>
             <Card title="Usuarios" value={summary?.db?.users ?? '—'} />
             <Card title="Cursos" value={summary?.db?.courses ?? '—'} />
-            <Card title="Submissions" value={summary?.db?.submissions ?? '—'} />
-            <Card title="Migrations" value={summary?.db?.migrations ?? '—'} />
+            <Card title="Entregas" value={summary?.db?.submissions ?? '—'} />
+            <Card title="Migraciones" value={summary?.db?.migrations ?? '—'} />
           </div>
         ) : (
-          <div className="mt-6"><EmptyState title="Sin datos" description="No se encontró información del sistema." /></div>
+          <div style={{ marginTop: 16 }}><EmptyState title="Sin datos" description="No se encontró información del sistema." /></div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          <Card title="Foro (threads)" value={summary?.db?.forum_threads ?? '—'} />
-          <Card title="Quiz submissions" value={summary?.db?.quiz_submissions ?? '—'} />
-          <Card title="Assignments" value={summary?.db?.assignments ?? '—'} />
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ fontWeight: 600 }}>Health</h3>
+          <div className="card-muted" style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)', display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <StatusPill status={health.status} />
+              <span className="muted">{health.message || '—'}</span>
+              {health.checkedAt && <span className="muted" style={{ fontSize: 12 }}>Actualizado: {health.checkedAt.toLocaleString()}</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <MiniStat label="DB" value={summary?.db ? 'Conectado' : '—'} />
+              <MiniStat label="Migraciones" value={summary?.db?.migrations ?? '—'} />
+              <MiniStat label="Usuarios" value={summary?.db?.users ?? '—'} />
+            </div>
+          </div>
         </div>
 
-        <div className="mt-6">
-          <h3 className="font-semibold">Recent assignments</h3>
-          <div className="mt-2 bg-gray-50 p-3 rounded">
+        <div className="grid-3" style={{ marginTop: 16 }}>
+          <Card title="Foro (threads)" value={summary?.db?.forum_threads ?? '—'} />
+          <Card title="Foro (hilos)" value={summary?.db?.forum_threads ?? '—'} />
+          <Card title="Entregas de quiz" value={summary?.db?.quiz_submissions ?? '—'} />
+          <Card title="Tareas" value={summary?.db?.assignments ?? '—'} />
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ fontWeight: 600 }}>Tareas recientes</h3>
+          <div className="card-muted" style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)' }}>
             {summary?.recent_assignments && summary.recent_assignments.length > 0 ? (
-              <ul>
+              <ul style={{ display: 'grid', gap: 8 }}>
                 {summary.recent_assignments.map(a => (
-                  <li key={a.id} className="py-2 border-b last:border-b-0">
-                    <div className="font-medium">{a.title}</div>
-                    <div className="text-sm text-gray-500">{a.start_at ? new Date(a.start_at).toLocaleString() : ''} — {a.end_at ? new Date(a.end_at).toLocaleString() : ''}</div>
+                  <li key={a.id} style={{ paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontWeight: 600 }}>{a.title}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{a.start_at ? new Date(a.start_at).toLocaleString() : ''} — {a.end_at ? new Date(a.end_at).toLocaleString() : ''}</div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <div className="text-sm text-gray-500">No recent assignments</div>
+              <div className="muted">Sin tareas recientes</div>
             )}
           </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-between">
-          <h3 className="font-semibold">Health (raw)</h3>
-          <a href="/admin/users" className="px-3 py-2 bg-blue-600 text-white rounded">Administrar Usuarios</a>
-          <pre className="mt-2 bg-gray-100 p-3 rounded">{summary ? JSON.stringify(summary, null, 2) : 'No data'}</pre>
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ fontWeight: 600 }}>Estado (raw)</h3>
+          <pre className="card-muted" style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)', overflowX: 'auto' }}>{summary ? JSON.stringify(summary, null, 2) : 'Sin datos'}</pre>
         </div>
-        <div className="mt-6">
+
+        <div style={{ marginTop: 16 }}>
           <AdminTasks />
         </div>
       </div>
@@ -87,9 +118,33 @@ export default function AdminDashboard() {
 
 function Card({ title, value }) {
   return (
-    <div className="p-4 bg-gray-50 rounded shadow-sm">
-      <div className="text-sm text-gray-500">{title}</div>
-      <div className="text-2xl font-bold">{value}</div>
+    <div className="card" style={{ padding: 14 }}>
+      <div className="muted" style={{ fontSize: 12 }}>{title}</div>
+      <div style={{ fontSize: 24, fontWeight: 600, marginTop: 4 }}>{value}</div>
+    </div>
+  );
+}
+
+function StatusPill({ status }) {
+  const map = {
+    ok: { label: 'OK', bg: '#DCFCE7', color: '#166534' },
+    warn: { label: 'Warn', bg: '#FEF9C3', color: '#854D0E' },
+    error: { label: 'Error', bg: '#FEE2E2', color: '#991B1B' },
+    unknown: { label: 'Desconocido', bg: '#E5E7EB', color: '#111827' }
+  };
+  const cfg = map[status] || map.unknown;
+  return (
+    <span style={{ padding: '4px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 600 }}>
+      {cfg.label}
+    </span>
+  );
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span className="muted" style={{ fontSize: 12 }}>{label}:</span>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>{value}</span>
     </div>
   );
 }
