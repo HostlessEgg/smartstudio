@@ -2,7 +2,6 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
-import ErrorBoundary from './components/ErrorBoundary';
 import ToastContainer from './components/ToastContainer';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -61,11 +60,10 @@ function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <ErrorBoundary>
-          <Router>
-            <div className="App">
-              <AppHeader />
-              <Routes>
+        <Router>
+          <div className="App app-bg" style={{ minHeight: '100vh' }}>
+            <AppHeader />
+            <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/dashboard" />} />
             
@@ -241,11 +239,10 @@ function App() {
                 <CalendarIcalExport />
               </ProtectedRoute>
             } />
-              </Routes>
-            </div>
-            <ToastContainer />
-          </Router>
-        </ErrorBoundary>
+            </Routes>
+          </div>
+          <ToastContainer />
+        </Router>
       </AuthProvider>
     </ToastProvider>
   );
@@ -256,50 +253,50 @@ export default App;
 function AppHeader() {
   const { user, logout } = useAuth();
   return (
-    <header className="bg-white shadow p-3">
-      <div className="container mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link to="/dashboard" className="font-bold text-lg">SMARTSTUDIO</Link>
+    <header style={{ background: 'rgba(255,255,255,0.9)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(8px)', position: 'sticky', top: 0, zIndex: 40 }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Link to="/dashboard" style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-0.02em' }}>SMARTSTUDIO</Link>
           {user && (
             <>
-              <Link to="/calendar" className="text-sm text-gray-600 hover:text-gray-900">Calendario</Link>
-              <Link to="/forums/course/1" className="text-sm text-gray-600 hover:text-gray-900">Foros</Link>
+              <Link to="/calendar" className="muted">Calendario</Link>
+              <Link to="/forums/course/1" className="muted">Foros</Link>
             </>
           )}
           {user && user.role === 'admin' && (
             <>
-              <Link to="/admin/subjects" className="text-sm text-gray-600 hover:text-gray-900">Materias</Link>
-              <Link to="/admin/users" className="text-sm text-gray-600 hover:text-gray-900">Usuarios</Link>
+              <Link to="/admin/subjects" className="muted">Materias</Link>
+              <Link to="/admin/users" className="muted">Usuarios</Link>
             </>
           )}
           {user && user.role === 'teacher' && (
             <>
-              <Link to="/teacher/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
-              <Link to="/teacher/courses" className="text-sm text-gray-600 hover:text-gray-900">Mis Cursos</Link>
+              <Link to="/teacher/subjects" className="muted">Mis Materias</Link>
+              <Link to="/teacher/courses" className="muted">Mis Cursos</Link>
             </>
           )}
           {user && user.role === 'student' && (
             <>
-              <Link to="/student/subjects" className="text-sm text-gray-600 hover:text-gray-900">Mis Materias</Link>
-              <Link to="/student/assignments" className="text-sm text-gray-600 hover:text-gray-900">Mis Tareas</Link>
-              <Link to="/my/submissions" className="text-sm text-gray-600 hover:text-gray-900">Mis Entregas</Link>
+              <Link to="/student/subjects" className="muted">Mis Materias</Link>
+              <Link to="/student/assignments" className="muted">Mis Tareas</Link>
+              <Link to="/my/submissions" className="muted">Mis Entregas</Link>
             </>
           )}
           {user && (user.role === 'teacher' || user.role === 'admin') && (
-            <Link to="/course-structure" className="text-sm text-gray-600 hover:text-gray-900">Editor de Curso</Link>
+            <Link to="/course-structure" className="muted">Editor de Curso</Link>
           )}
         </div>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           {user ? (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-700">{user.name || user.email}</span>
+            <>
+              <span className="muted" style={{ fontSize: 13 }}>{user.name || user.email}</span>
               {user.role === 'admin' && (
-                <Link to="/representative" className="text-sm text-gray-600 hover:text-gray-900">Representante</Link>
+                <Link to="/representative" className="muted">Representante</Link>
               )}
-              <button onClick={logout} className="text-sm text-red-600">Cerrar sesión</button>
-            </div>
+              <button onClick={logout} className="btn-ghost" style={{ padding: '6px 10px', fontSize: 13 }}>Cerrar sesión</button>
+            </>
           ) : (
-            <Link to="/login" className="text-sm text-blue-600">Iniciar sesión</Link>
+            <Link to="/login" className="btn-primary" style={{ padding: '8px 12px', fontSize: 13 }}>Iniciar sesión</Link>
           )}
         </div>
       </div>
