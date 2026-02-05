@@ -576,6 +576,83 @@ app.post('/api/admin/import/users', authenticateToken, authorizeRoles(['admin'])
     }
 });
 
+// Import enrollments from CSV (admin)
+app.post('/api/admin/enrollments/bulk', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const { csv } = req.body;
+    if (!csv) return res.status(400).json({ error: 'csv requerido en body' });
+
+    const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return res.status(400).json({ error: 'csv vacío' });
+
+    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const hasHeader = header.includes('student_id') || header.includes('student_email') || header.includes('course_id');
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+
+    const connection = await mysql.createConnection(dbConfig);
+    const report = { imported: 0, skipped: 0, errors: [] };
+    try {
+        for (const [idx, line] of dataLines.entries()) {
+            const cols = line.split(',').map(p => p.trim());
+            const rowIndex = hasHeader ? idx + 2 : idx + 1;
+
+            let studentId = cols[0] || '';
+            let courseId = cols[1] || '';
+            let studentEmail = cols[2] || '';
+
+            if (hasHeader) {
+                studentId = cols[header.indexOf('student_id')] || '';
+                courseId = cols[header.indexOf('course_id')] || '';
+                studentEmail = cols[header.indexOf('student_email')] || '';
+            }
+
+            if (!courseId) {
+                report.skipped++;
+                report.errors.push({ line: rowIndex, error: 'course_id requerido' });
+                continue;
+            }
+
+            let studentIdResolved = studentId ? Number(studentId) : null;
+            if (!studentIdResolved && studentEmail) {
+                const [userRows] = await connection.execute('SELECT id FROM users WHERE email = ?', [studentEmail]);
+                if (userRows.length > 0) studentIdResolved = userRows[0].id;
+            }
+
+            if (!studentIdResolved) {
+                report.skipped++;
+                report.errors.push({ line: rowIndex, error: 'student_id o student_email requerido' });
+                continue;
+            }
+
+            const [courseRows] = await connection.execute('SELECT id FROM courses WHERE id = ?', [courseId]);
+            if (courseRows.length === 0) {
+                report.skipped++;
+                report.errors.push({ line: rowIndex, error: 'course_id no existe', courseId });
+                continue;
+            }
+
+            const [ins] = await connection.execute(
+                'INSERT IGNORE INTO enrollments (student_id, course_id) VALUES (?, ?)',
+                [studentIdResolved, courseId]
+            );
+
+            if (ins.affectedRows > 0) {
+                report.imported++;
+            } else {
+                report.skipped++;
+                report.errors.push({ line: rowIndex, error: 'ya inscrito', studentId: studentIdResolved, courseId });
+            }
+        }
+
+        await logAudit(req, 'import_enrollments_csv', 'enrollment', null, { report: { imported: report.imported, skipped: report.skipped, errors: report.errors } });
+        await connection.end();
+        res.json({ message: 'Importación completada', report });
+    } catch (err) {
+        await connection.end();
+        console.error('Error importando inscripciones:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Actualizar perfil (propio o Admin)
 app.put('/api/users/:id', authenticateToken, async (req, res) => {
     const id = Number(req.params.id);

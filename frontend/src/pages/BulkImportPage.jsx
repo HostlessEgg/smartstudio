@@ -4,31 +4,35 @@ import { useToast } from '../contexts/ToastContext';
 
 export default function BulkImportPage(){
   const [fileName, setFileName] = useState(null);
+  const [fileText, setFileText] = useState('');
   const [preview, setPreview] = useState([]);
   const [report, setReport] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [importType, setImportType] = useState('users');
   const { addToast } = useToast();
 
   const onFile = async (e) => {
     const f = e.target.files[0];
     if (!f) return;
     setFileName(f.name);
-    // mock preview: read first few lines
+    // preview: read first few lines
     const text = await f.text();
+    setFileText(text);
     const lines = text.split('\n').slice(0,10);
     setPreview(lines.map((l,i)=>({ line: i+1, text: l })));
     setReport(null);
   };
 
   const onSubmit = async () => {
-    if (!fileName || preview.length === 0) {
+    if (!fileName || !fileText) {
       addToast('Selecciona un CSV primero', { type: 'error' });
       return;
     }
     setUploading(true);
     try {
-      const csv = preview.map(p => p.text).join('\n');
-      const res = await api.post('/admin/import/users', { csv });
+      const csv = fileText;
+      const endpoint = importType === 'users' ? '/admin/import/users' : '/admin/enrollments/bulk';
+      const res = await api.post(endpoint, { csv });
       const rep = res.data?.report;
       setReport(rep || null);
       addToast(res.data?.message || 'Importación completada', { type: 'success' });
@@ -47,6 +51,33 @@ export default function BulkImportPage(){
           <p className="section-subtitle">Previsualiza las primeras líneas antes de importar.</p>
         </div>
 
+        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className={importType === 'users' ? 'btn-primary' : 'btn-ghost'}
+            onClick={() => { setImportType('users'); setReport(null); }}
+          >
+            Usuarios
+          </button>
+          <button
+            className={importType === 'enrollments' ? 'btn-primary' : 'btn-ghost'}
+            onClick={() => { setImportType('enrollments'); setReport(null); }}
+          >
+            Inscripciones
+          </button>
+        </div>
+
+        <div className="card-muted" style={{ marginTop: 12, padding: 12, border: '1px solid var(--border)' }}>
+          {importType === 'users' ? (
+            <div className="text-sm">
+              CSV esperado: <strong>name,email,role,password</strong>. Role permitido: student, teacher, admin, guest.
+            </div>
+          ) : (
+            <div className="text-sm">
+              CSV esperado: <strong>student_id,course_id,student_email</strong>. Puedes usar student_id o student_email.
+            </div>
+          )}
+        </div>
+
         <div style={{ marginTop: 16 }}>
           <input type="file" accept=".csv" onChange={onFile} className="input" />
           {fileName && <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Archivo: {fileName}</div>}
@@ -63,7 +94,7 @@ export default function BulkImportPage(){
 
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn-primary" onClick={onSubmit} disabled={uploading}><span className="btn-icon" aria-hidden="true">✔</span><span className="btn-label">{uploading ? 'Procesando...' : 'Procesar importación'}</span></button>
-          <button className="btn-ghost" onClick={() => { setPreview([]); setFileName(null); }}>Limpiar</button>
+          <button className="btn-ghost" onClick={() => { setPreview([]); setFileName(null); setFileText(''); }}>Limpiar</button>
         </div>
 
         {report && (
