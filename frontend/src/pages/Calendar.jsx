@@ -29,7 +29,8 @@ export default function CalendarPage() {
       if (filters.grade) params.gradeId = filters.grade;
       if (filters.subject) params.subjectId = filters.subject;
       if (filters.q) params.q = filters.q;
-      const res = await axios.get('/api/assignments', { params });
+      const endpoint = user?.role === 'student' ? '/api/my/assignments' : '/api/assignments';
+      const res = await axios.get(endpoint, { params });
       const items = (res.data || []).map(a => ({
         id: a.id,
         title: a.title + (a.grade_name ? ` - ${a.grade_name}` : ''),
@@ -79,7 +80,7 @@ export default function CalendarPage() {
         console.error('Error fetching curriculum', err);
       }
     })();
-  }, []);
+  }, [user]);
 
   // Re-fetch events when filters change
   useEffect(() => {
