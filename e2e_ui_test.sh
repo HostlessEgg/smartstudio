@@ -4,6 +4,7 @@ set -euo pipefail
 BASE="http://localhost:5000"
 TEACHER_EMAIL="teacher+auto-ui@example.com"
 STUDENT_EMAIL="student+auto-ui@example.com"
+REP_EMAIL="rep+auto-ui@example.com"
 PASSWORD="StrongP@ssw0rd!"
 COURSE_TITLE="Auto UI Course"
 ASSIGN_TITLE="Auto Assignment UI"
@@ -59,12 +60,23 @@ get_token() {
   return 1
 }
 
+# Helper: get user id via login (assumes user exists)
+get_user_id() {
+  local email="$1"
+  local resp
+  resp=$(curl -sS -X POST "$BASE/api/auth/login" -H "Content-Type: application/json" -d "{\"email\":\"$email\",\"password\":\"$PASSWORD\"}" 2>/dev/null || echo "")
+  echo "$resp" | jq -r '.user.id // empty' 2>/dev/null || echo ""
+}
+
 TEACHER_TOKEN=$(get_token "$TEACHER_EMAIL" "Auto Teacher" "teacher")
 STUDENT_TOKEN=$(get_token "$STUDENT_EMAIL" "Auto Student" "student")
+REP_TOKEN=$(get_token "$REP_EMAIL" "Auto Representative" "student")
+STUDENT_ID=$(get_user_id "$STUDENT_EMAIL")
 
 echo
 echo "Teacher token: ${TEACHER_TOKEN:0:20}..."
 echo "Student token: ${STUDENT_TOKEN:0:20}..."
+echo "Rep token: ${REP_TOKEN:0:20}..."
 echo
 
 # Create or find course
@@ -158,5 +170,36 @@ echo "$grade_resp" | jq . || echo "$grade_resp"
 echo "--- Student fetches their submission ---"
 view_resp=$(curl -sS "$BASE/api/submissions/$SUBMISSION_ID" -H "Authorization: Bearer $STUDENT_TOKEN" 2>/dev/null || echo "")
 echo "$view_resp" | jq . || echo "$view_resp"
+
+echo "--- Representative flow: request -> consent -> access ---"
+# ensure student id is present
+if [[ -z "$STUDENT_ID" ]]; then
+  echo "ERROR: could not determine STUDENT_ID" >&2
+  exit 1
+fi
+# representative requests access to student
+rep_req=$(curl -sS -X POST "$BASE/api/representatives" \
+  -H "Authorization: Bearer $REP_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"studentId\":$STUDENT_ID}" 2>/dev/null || echo "")
+REP_ID=$(echo "$rep_req" | jq -r '.representativeId // empty' 2>/dev/null || echo "")
+if [[ -z "$REP_ID" ]]; then
+  echo "ERROR: could not create representative request. Response:"
+  echo "$rep_req" | jq . || echo "$rep_req"
+  exit 1
+fi
+
+# student grants consent
+consent_resp=$(curl -sS -X POST "$BASE/api/representatives/consent" \
+  -H "Authorization: Bearer $STUDENT_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"studentId\":$STUDENT_ID,\"representativeId\":$REP_ID,\"action\":\"grant\"}" 2>/dev/null || echo "")
+echo "Consent response:"
+echo "$consent_resp" | jq . || echo "$consent_resp"
+
+# representative views progress
+rep_view=$(curl -sS "$BASE/api/representatives/students/$STUDENT_ID/progress" -H "Authorization: Bearer $REP_TOKEN" 2>/dev/null || echo "")
+echo "Representative view progress response:"
+echo "$rep_view" | jq . || echo "$rep_view"
+
+echo "--- Done representatives ---"
 
 echo "--- Done ---"
