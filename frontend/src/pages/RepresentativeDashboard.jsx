@@ -129,35 +129,36 @@ export default function RepresentativeDashboard() {
     });
   };
 
+  const handleCreateRequest = async (event) => {
+    event.preventDefault();
+    const studentId = Number(requestStudentId);
+    if (!studentId) {
+      setToast({ message: 'Ingresa un ID de estudiante válido.', type: 'error' });
+      return;
+    }
+    try {
+      setLoading(true);
+      await api.post('/representatives', { studentId });
+      const res = await api.get('/representatives/requests');
+      setRequests(res.data.requests || []);
+      setRepresentativeId(res.data.representativeId || null);
+      const studentsRes = await api.get('/representatives/students');
+      setRepresentativeStudents(studentsRes.data.students || []);
+      setRequestStudentId('');
+      setToast({ message: 'Solicitud enviada.', type: 'success' });
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || err.message, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const viewProgress = async (studentId) => {
     try {
       setLoading(true);
       const res = await api.get(`/representatives/students/${studentId}/progress`);
       setStudentProgress((prev) => ({ ...prev, [studentId]: res.data.progress || res.data }));
       setProgressModal({ open: true, studentId });
-      const handleCreateRequest = async (event) => {
-        event.preventDefault();
-        const studentId = Number(requestStudentId);
-        if (!studentId) {
-          setToast({ message: 'Ingresa un ID de estudiante válido.', type: 'error' });
-          return;
-        }
-        try {
-          setLoading(true);
-          await api.post('/representatives', { studentId });
-          const res = await api.get('/representatives/requests');
-          setRequests(res.data.requests || []);
-          setRepresentativeId(res.data.representativeId || null);
-          const studentsRes = await api.get('/representatives/students');
-          setRepresentativeStudents(studentsRes.data.students || []);
-          setRequestStudentId('');
-          setToast({ message: 'Solicitud enviada.', type: 'success' });
-        } catch (err) {
-          setToast({ message: err.response?.data?.error || err.message, type: 'error' });
-        } finally {
-          setLoading(false);
-        }
-      };
     } catch (err) {
       setToast({ message: err.response?.data?.error || err.message, type: 'error' });
     } finally {
