@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: smartstudio_lms
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: smartstudio_lms
+      RATE_LIMITS_DISABLED: '1'
+      NODE_ENV: test
+      NODE_OPTIONS: '--dns-result-order=ipv4first'
+      TEST_BASE_URL: 'http://127.0.0.1:5000'
+      JWT_SECRET: test_secret
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Apply DB migrations (Node), ensure schema, seed
+        working-directory: backend
+        env:
+          DB_HOST: ${{ env.DB_HOST }}
+          DB_USER: ${{ env.DB_USER }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          DB_NAME: ${{ env.DB_NAME }}
+        run: |
+          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME npm run migrate:js
+          node ./scripts/ensure_schema.js
+          node scripts/seed_sample_data.js || true
+          node scripts/seed_additional_data.js || true
+
+      - name: Start backend server and wait for /health
+        working-directory: backend
+        run: |
+          # Start server bound to 0.0.0.0 and allow test-mode start, disable rate limits
+          HOST=0.0.0.0 FORCE_START=1 NODE_ENV=test RATE_LIMITS_DISABLED=1 JWT_SECRET=$JWT_SECRET nohup node server.js > server.log 2>&1 &
+          # prefer IPv4 for test runner to avoid ::1/localhost ambiguity
+          export NODE_OPTIONS=--dns-result-order=ipv4first
+          export TEST_BASE_URL=http://127.0.0.1:5000
+          # wait for health endpoint
+          for i in {1..30}; do
+            if curl -sSf "$TEST_BASE_URL/api/health" >/dev/null 2>&1; then
+              echo "backend ready"
+              break
+            fi
+            sleep 1
+          done
+          # show server log tail if not ready
+          if ! curl -sSf "$TEST_BASE_URL/api/health" >/dev/null 2>&1; then
+            echo "Server failed to start, last server.log:";
+            tail -n 200 server.log || true
+            exit 1
+          fi
+
+      - name: Run backend tests (Jest)
+        working-directory: backend
+        env:
+          RATE_LIMITS_DISABLED: '1'
+          NODE_OPTIONS: ${{ env.NODE_OPTIONS }}
+          TEST_BASE_URL: ${{ env.TEST_BASE_URL }}
+        run: npm test --silent
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests (Vitest)
+        working-directory: frontend
+        run: npm test --silent

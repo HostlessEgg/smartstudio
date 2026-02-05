@@ -1,0 +1,4 @@
+[
+  { "id": "c1", "name": "Cohorte Noviembre", "course_id": 101, "start_date": "2025-11-01", "end_date": "2025-12-31" },
+  { "id": "c2", "name": "Cohorte Enero", "course_id": 102, "start_date": "2026-01-10", "end_date": "2026-03-30" }
+]

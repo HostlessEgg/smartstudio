@@ -75,19 +75,46 @@ const CourseCreator = () => {
     e.preventDefault();
     setLoading(true);
 
-    try {
-      // En una implementación real, aquí enviarías los datos al backend
-      console.log('Datos del curso:', { ...courseData, modules });
-      
-      // Simulación de éxito
-      setTimeout(() => {
-        alert('Curso creado exitosamente!');
-        navigate('/dashboard');
-      }, 1000);
+    // Client-side validations for modules/lessons
+    if (modules.length > 0) {
+      for (let mi = 0; mi < modules.length; mi++) {
+        const m = modules[mi];
+        if (!m.title || String(m.title).trim() === '') {
+          setLoading(false);
+          alert(`El módulo ${mi + 1} requiere un título.`);
+          return;
+        }
+        if (!m.lessons || m.lessons.length === 0) {
+          setLoading(false);
+          alert(`El módulo ${mi + 1} debe contener al menos una lección.`);
+          return;
+        }
+        for (let li = 0; li < m.lessons.length; li++) {
+          const lesson = m.lessons[li];
+          if (!lesson.title || String(lesson.title).trim() === '') {
+            setLoading(false);
+            alert(`Módulo ${mi + 1}, lección ${li + 1} requiere un título.`);
+            return;
+          }
+        }
+      }
+    }
 
+    try {
+      const payload = { ...courseData, modules: modules.map(m => ({ title: m.title, description: m.description, order_index: m.order_index || 0, lessons: (m.lessons || []).map(l => ({ title: l.title, lesson_type: l.lesson_type, content: l.content })) })) };
+      const res = await axios.post('/api/courses', payload);
+      if (res.status === 201 && res.data && res.data.course && res.data.course.id) {
+        alert('Curso creado exitosamente');
+        navigate(`/course/${res.data.course.id}`);
+      } else {
+        console.error('Unexpected response creating course', res.data);
+        alert('Curso creado pero respuesta inesperada');
+        navigate('/dashboard');
+      }
     } catch (error) {
       console.error('Error creating course:', error);
-      alert('Error al crear el curso');
+      const errMsg = error.response?.data?.error || (error.response?.data?.errors ? error.response.data.errors.map(e=>e.msg).join(', ') : null) || 'Error al crear el curso';
+      alert(errMsg);
     } finally {
       setLoading(false);
     }

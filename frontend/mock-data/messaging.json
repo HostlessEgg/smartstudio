@@ -1,0 +1,4 @@
+[
+  { "id": "m1", "from": "alice", "text": "Hola, ¿cómo estás?", "timestamp": "2025-11-30T10:00:00Z" },
+  { "id": "m2", "from": "bob", "text": "Preparando la próxima lección.", "timestamp": "2025-11-30T09:45:00Z" }
+]

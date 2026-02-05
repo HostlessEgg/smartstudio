@@ -1,0 +1,102 @@
+name: Backend tests
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - 'database/**'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'database/**'
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: smartstudio_lms
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "MySQL is up"; break
+            fi
+            echo "Waiting for MySQL... ($i)"; sleep 2
+          done
+
+      - name: Install backend deps
+        run: |
+          cd backend
+          npm install
+
+      - name: Apply DB migrations (Node), ensure schema, seed
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: smartstudio_lms
+        run: |
+          cd backend
+          DB_HOST=$DB_HOST DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME npm run migrate:js
+          node ./scripts/ensure_schema.js
+          node scripts/seed_sample_data.js || true
+          node scripts/seed_additional_data.js || true
+
+      - name: Start backend server and wait for /api/health
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: smartstudio_lms
+          RATE_LIMITS_DISABLED: '1'
+          NODE_ENV: test
+          JWT_SECRET: test_secret
+        run: |
+          cd backend
+          HOST=0.0.0.0 FORCE_START=1 RATE_LIMITS_DISABLED=$RATE_LIMITS_DISABLED NODE_ENV=$NODE_ENV JWT_SECRET=$JWT_SECRET nohup node server.js > server.log 2>&1 &
+          export TEST_BASE_URL=http://127.0.0.1:5000
+          for i in {1..30}; do
+            if curl -sSf "$TEST_BASE_URL/api/health" >/dev/null 2>&1; then
+              echo "backend ready"; break
+            fi
+            echo "waiting for backend ($i)"; sleep 1
+          done
+          if ! curl -sSf "$TEST_BASE_URL/api/health" >/dev/null 2>&1; then
+            echo "Server failed to start, last server.log:";
+            tail -n 200 server.log || true
+            exit 1
+          fi
+
+      - name: Run backend tests
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: smartstudio_lms
+          JWT_SECRET: test_secret
+          RATE_LIMITS_DISABLED: '1'
+          TEST_BASE_URL: http://127.0.0.1:5000
+        run: |
+          cd backend
+          npm test --silent
