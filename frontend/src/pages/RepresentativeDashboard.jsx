@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from '../components/Toast';
 import ProgressModal from '../components/ProgressModal';
@@ -10,6 +10,8 @@ export default function RepresentativeDashboard() {
   const { user } = useAuth();
   const [requests, setRequests] = useState([]);
   const [representativeId, setRepresentativeId] = useState(null);
+  const [representativeStudents, setRepresentativeStudents] = useState([]);
+  const [requestStudentId, setRequestStudentId] = useState('');
   const [received, setReceived] = useState([]);
   const [studentProgress, setStudentProgress] = useState({});
   const [progressModal, setProgressModal] = useState({ open: false, studentId: null });
@@ -25,22 +27,32 @@ export default function RepresentativeDashboard() {
       setLoading(true);
       try {
         if (user.role === 'student') {
-          const res = await axios.get('/api/representatives/received');
+          const res = await api.get('/representatives/received');
           setReceived(res.data.requests || []);
-        } else if (user.role === 'representative') {
-          // representatives can view their representados directly (no consent required)
-          // For demo: try to fetch an endpoint, fallback to mock list
-          try {
-            const res = await axios.get('/api/representatives/students');
-            setRequests(res.data.students || []);
-          } catch (e) {
-            // mock students for UI demo
-            setRequests([{ id: 's1', student_id: 101, name: 'Juan Perez' }, { id: 's2', student_id: 102, name: 'María Gomez' }]);
-          }
         } else {
-          const res = await axios.get('/api/representatives/requests');
-          setRequests(res.data.requests || []);
-          setRepresentativeId(res.data.representativeId || null);
+          try {
+            const res = await api.get('/representatives/requests');
+            setRequests(res.data.requests || []);
+            setRepresentativeId(res.data.representativeId || null);
+          } catch (err) {
+            if (err.response?.status === 403) {
+              setRequests([]);
+              setRepresentativeId(null);
+            } else {
+              throw err;
+            }
+          }
+
+          try {
+            const res = await api.get('/representatives/students');
+            setRepresentativeStudents(res.data.students || []);
+          } catch (err) {
+            if (err.response?.status === 403) {
+              setRepresentativeStudents([]);
+            } else {
+              throw err;
+            }
+          }
         }
       } catch (err) {
         setError(err.response?.data?.error || err.message);
@@ -59,8 +71,8 @@ export default function RepresentativeDashboard() {
   const onConfirmConsent = async ({ studentId: sId, expiresAt }) => {
     try {
       const repId = consentModal.repId;
-      await axios.post('/api/representatives/consent', { studentId: sId || user.id, representativeId: repId, action: 'grant', expiresAt: expiresAt || null });
-      const res = await axios.get('/api/representatives/received');
+      await api.post('/representatives/consent', { studentId: sId || user.id, representativeId: repId, action: 'grant', expiresAt: expiresAt || null });
+      const res = await api.get('/representatives/received');
       setReceived(res.data.requests || []);
       setToast({ message: 'Consentimiento otorgado.', type: 'success' });
     } catch (err) {
@@ -78,8 +90,8 @@ export default function RepresentativeDashboard() {
       message: '¿Estás seguro de revocar el consentimiento?',
       onConfirm: async () => {
         try {
-          await axios.post('/api/representatives/consent', { studentId: user.id, representativeId: repId, action: 'revoke' });
-          const res = await axios.get('/api/representatives/received');
+          await api.post('/representatives/consent', { studentId: user.id, representativeId: repId, action: 'revoke' });
+          const res = await api.get('/representatives/received');
           setReceived(res.data.requests || []);
           setToast({ message: 'Consentimiento revocado.', type: 'success' });
         } catch (err) {
@@ -100,10 +112,12 @@ export default function RepresentativeDashboard() {
         try {
           const idToCancel = repId || representativeId;
           if (!idToCancel) throw new Error('Representative id desconocido');
-          await axios.delete(`/api/representatives/${idToCancel}/cancel`);
-          const res = await axios.get('/api/representatives/requests');
+          await api.delete(`/representatives/${idToCancel}/cancel`);
+          const res = await api.get('/representatives/requests');
           setRequests(res.data.requests || []);
           setRepresentativeId(res.data.representativeId || null);
+          const studentsRes = await api.get('/representatives/students');
+          setRepresentativeStudents(studentsRes.data.students || []);
           setToast({ message: 'Solicitud cancelada.', type: 'success' });
         } catch (err) {
           setError(err.response?.data?.error || err.message);
@@ -118,9 +132,32 @@ export default function RepresentativeDashboard() {
   const viewProgress = async (studentId) => {
     try {
       setLoading(true);
-      const res = await axios.get(`/api/representatives/students/${studentId}/progress`);
+      const res = await api.get(`/representatives/students/${studentId}/progress`);
       setStudentProgress((prev) => ({ ...prev, [studentId]: res.data.progress || res.data }));
       setProgressModal({ open: true, studentId });
+      const handleCreateRequest = async (event) => {
+        event.preventDefault();
+        const studentId = Number(requestStudentId);
+        if (!studentId) {
+          setToast({ message: 'Ingresa un ID de estudiante válido.', type: 'error' });
+          return;
+        }
+        try {
+          setLoading(true);
+          await api.post('/representatives', { studentId });
+          const res = await api.get('/representatives/requests');
+          setRequests(res.data.requests || []);
+          setRepresentativeId(res.data.representativeId || null);
+          const studentsRes = await api.get('/representatives/students');
+          setRepresentativeStudents(studentsRes.data.students || []);
+          setRequestStudentId('');
+          setToast({ message: 'Solicitud enviada.', type: 'success' });
+        } catch (err) {
+          setToast({ message: err.response?.data?.error || err.message, type: 'error' });
+        } finally {
+          setLoading(false);
+        }
+      };
     } catch (err) {
       setToast({ message: err.response?.data?.error || err.message, type: 'error' });
     } finally {
@@ -142,7 +179,9 @@ export default function RepresentativeDashboard() {
             {received.map((r) => (
               <li key={r.id} className="p-2 border-b flex justify-between items-center">
                 <div>
-                  <div>Representative ID: {r.representative_id}</div>
+                  <div>Representante: {r.representative_name || 'Sin nombre'}</div>
+                  <div className="text-sm text-gray-600">Email: {r.representative_email || 'N/A'}</div>
+                  <div className="text-sm text-gray-600">ID representante: {r.representative_id}</div>
                   <div>Requested at: {new Date(r.requested_at).toLocaleString()}</div>
                   <div>Active: {r.active ? 'Sí' : 'No'}</div>
                 </div>
@@ -159,15 +198,48 @@ export default function RepresentativeDashboard() {
         </section>
       )}
 
-      {user && user.role === 'representative' && (
+      {user && user.role !== 'student' && (
         <section>
-          <h3 className="font-medium">Mis representados</h3>
-          {requests.length === 0 && <p>No tienes representados asignados.</p>}
-          <ul>
+          <h3 className="font-medium">Solicitar acceso como representante</h3>
+          <form onSubmit={handleCreateRequest} className="flex flex-wrap gap-2 items-end mb-4">
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-gray-600">ID de estudiante</span>
+              <input
+                value={requestStudentId}
+                onChange={(e) => setRequestStudentId(e.target.value)}
+                className="border rounded px-3 py-2"
+                placeholder="Ej: 123"
+              />
+            </label>
+            <button type="submit" className="btn btn-primary">Enviar solicitud</button>
+            {representativeId && (
+              <button type="button" onClick={() => handleCancel(representativeId)} className="btn btn-secondary">Cancelar pendientes</button>
+            )}
+          </form>
+
+          <h4 className="font-medium">Solicitudes realizadas</h4>
+          {requests.length === 0 && <p>No has realizado solicitudes.</p>}
+          <ul className="mb-6">
             {requests.map((r) => (
               <li key={r.id} className="p-2 border-b flex justify-between items-center">
                 <div>
-                  <div><strong>{r.name || ('Student ' + r.student_id)}</strong></div>
+                  <div><strong>{r.student_name || ('Estudiante ' + r.student_id)}</strong></div>
+                  <div className="text-sm text-gray-600">Email: {r.student_email || 'N/A'}</div>
+                  <div className="text-sm text-gray-600">ID: {r.student_id}</div>
+                  <div className="text-sm">Estado: {r.active ? 'Activo' : 'Pendiente'}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <h4 className="font-medium">Representados con consentimiento activo</h4>
+          {representativeStudents.length === 0 && <p>No tienes consentimientos activos.</p>}
+          <ul>
+            {representativeStudents.map((r) => (
+              <li key={r.student_id} className="p-2 border-b flex justify-between items-center">
+                <div>
+                  <div><strong>{r.name || ('Estudiante ' + r.student_id)}</strong></div>
+                  <div className="text-sm text-gray-600">Email: {r.email || 'N/A'}</div>
                   <div className="text-sm text-gray-600">ID: {r.student_id}</div>
                 </div>
                 <div>
@@ -198,6 +270,7 @@ export default function RepresentativeDashboard() {
         confirmLabel={'Confirmar'}
         cancelLabel={'Cancelar'}
       />
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'info' })} />
     </div>
   );
 }

@@ -51,9 +51,15 @@ router.post('/',
       }
 
       // create consent request (inactive by default)
-      await connection.execute(
+      const [consentResult] = await connection.execute(
         'INSERT INTO consents (student_id, representative_id, active, requested_at) VALUES (?, ?, false, NOW())',
         [studentId, representativeId]
+      );
+
+      // audit
+      await connection.execute(
+        'INSERT INTO audits (user_id, action, entity, entity_id, details, ip) VALUES (?, ?, ?, ?, ?, ?)',
+        [representativeUserId, 'representative_request', 'consent', String(consentResult.insertId), JSON.stringify({ studentId, representativeId }), req.ip || null]
       );
 
       await connection.end();
@@ -85,10 +91,20 @@ router.post('/consent',
           `UPDATE consents SET active = true, granted_by = ?, granted_at = NOW(), expires_at = ? WHERE representative_id = ? AND student_id = ?`,
           [studentId, expiresAt || null, representativeId, studentId]
         );
+
+        await connection.execute(
+          'INSERT INTO audits (user_id, action, entity, entity_id, details, ip) VALUES (?, ?, ?, ?, ?, ?)',
+          [studentId, 'representative_consent_grant', 'consent', String(representativeId), JSON.stringify({ representativeId, studentId }), req.ip || null]
+        );
       } else {
         await connection.execute(
           `UPDATE consents SET active = false, expires_at = NOW() WHERE representative_id = ? AND student_id = ?`,
           [representativeId, studentId]
+        );
+
+        await connection.execute(
+          'INSERT INTO audits (user_id, action, entity, entity_id, details, ip) VALUES (?, ?, ?, ?, ?, ?)',
+          [studentId, 'representative_consent_revoke', 'consent', String(representativeId), JSON.stringify({ representativeId, studentId }), req.ip || null]
         );
       }
       await connection.end();
@@ -99,6 +115,35 @@ router.post('/consent',
     }
   }
 );
+
+// GET /api/representatives/students - listar estudiantes con consentimiento activo
+router.get('/students', authenticateToken, async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+    const requester = req.user;
+
+    const [repRows] = await connection.execute('SELECT id FROM representatives WHERE user_id = ?', [requester.userId]);
+    if (repRows.length === 0) {
+      await connection.end();
+      return res.status(403).json({ error: 'No representative profile' });
+    }
+
+    const repId = repRows[0].id;
+    const [rows] = await connection.execute(
+      `SELECT c.student_id, u.name, u.email, c.active, c.granted_at, c.expires_at
+       FROM consents c
+       JOIN users u ON u.id = c.student_id
+       WHERE c.representative_id = ? AND c.active = 1
+       ORDER BY c.granted_at DESC`,
+      [repId]
+    );
+    await connection.end();
+    res.json({ representativeId: repId, students: rows });
+  } catch (err) {
+    console.error('Error listando estudiantes del representante:', err);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
 
 // GET /api/representatives/students/:studentId/progress - ver progreso si tiene consentimiento
 router.get('/students/:studentId/progress', authenticateToken, async (req, res) => {
@@ -133,6 +178,12 @@ router.get('/students/:studentId/progress', authenticateToken, async (req, res) 
     // Log access in representative_access_logs
     await connection.execute('INSERT INTO representative_access_logs (representative_id, student_id, action, details, ip) VALUES (?, ?, ?, ?, ?)', [repId, studentId, 'view_progress', JSON.stringify({ by: requester.userId }), req.ip || null]);
 
+    // Audit log
+    await connection.execute(
+      'INSERT INTO audits (user_id, action, entity, entity_id, details, ip) VALUES (?, ?, ?, ?, ?, ?)',
+      [requester.userId, 'representative_view_progress', 'student', String(studentId), JSON.stringify({ representativeId: repId }), req.ip || null]
+    );
+
     await connection.end();
     res.json({ studentId, progress: rows });
   } catch (err) {
@@ -153,7 +204,14 @@ router.get('/requests', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'No representative profile' });
     }
     const repId = repRows[0].id;
-    const [rows] = await connection.execute('SELECT c.id, c.student_id, c.active, c.requested_at, c.granted_at, c.expires_at FROM consents c WHERE c.representative_id = ? ORDER BY c.requested_at DESC', [repId]);
+    const [rows] = await connection.execute(
+      `SELECT c.id, c.student_id, u.name AS student_name, u.email AS student_email, c.active, c.requested_at, c.granted_at, c.expires_at
+       FROM consents c
+       JOIN users u ON u.id = c.student_id
+       WHERE c.representative_id = ?
+       ORDER BY c.requested_at DESC`,
+      [repId]
+    );
     await connection.end();
     res.json({ representativeId: repId, requests: rows });
   } catch (err) {
@@ -167,7 +225,16 @@ router.get('/received', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     const studentId = req.user.userId;
-    const [rows] = await connection.execute('SELECT c.id, c.representative_id, r.user_id as representative_user_id, c.active, c.requested_at, c.granted_at, c.expires_at FROM consents c JOIN representatives r ON c.representative_id = r.id WHERE c.student_id = ? ORDER BY c.requested_at DESC', [studentId]);
+    const [rows] = await connection.execute(
+      `SELECT c.id, c.representative_id, r.user_id as representative_user_id, u.name as representative_name, u.email as representative_email,
+              c.active, c.requested_at, c.granted_at, c.expires_at
+       FROM consents c
+       JOIN representatives r ON c.representative_id = r.id
+       JOIN users u ON r.user_id = u.id
+       WHERE c.student_id = ?
+       ORDER BY c.requested_at DESC`,
+      [studentId]
+    );
     await connection.end();
     res.json({ studentId, requests: rows });
   } catch (err) {
