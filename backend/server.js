@@ -681,6 +681,53 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// Preferencias de notificaciones (email / resumen / in-app)
+app.get('/api/notifications/settings', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute(
+            'SELECT email_notifications, weekly_digest, in_app_notifications FROM notification_settings WHERE user_id = ? LIMIT 1',
+            [userId]
+        );
+        await connection.end();
+        if (rows.length === 0) {
+            return res.json({ email_notifications: true, weekly_digest: false, in_app_notifications: true });
+        }
+        res.json(rows[0]);
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo preferencias de notificaciones:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.put('/api/notifications/settings', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const { email_notifications, weekly_digest, in_app_notifications } = req.body || {};
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        await connection.execute(
+            `INSERT INTO notification_settings (user_id, email_notifications, weekly_digest, in_app_notifications)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE email_notifications = VALUES(email_notifications), weekly_digest = VALUES(weekly_digest), in_app_notifications = VALUES(in_app_notifications)`,
+            [
+                userId,
+                email_notifications !== undefined ? Boolean(email_notifications) : true,
+                weekly_digest !== undefined ? Boolean(weekly_digest) : false,
+                in_app_notifications !== undefined ? Boolean(in_app_notifications) : true
+            ]
+        );
+        await logAudit(req, 'update_notification_settings', 'notification_settings', userId, { email_notifications, weekly_digest, in_app_notifications });
+        await connection.end();
+        res.json({ message: 'Preferencias guardadas' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error guardando preferencias de notificaciones:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Asignar/setear role a un usuario (solo Admin)
 app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ check('role').isIn(['student','teacher','admin','guest']) ], async (req, res) => {
     const id = Number(req.params.id);

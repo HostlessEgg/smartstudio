@@ -1,29 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import mockApi from '../lib/mockApi';
+import api from '../lib/api';
+import { useToast } from '../contexts/ToastContext';
 import Button from '../components/ui/Button';
 
 export default function RepresentativeSettings(){
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [weeklyDigest, setWeeklyDigest] = useState(false);
+  const [inAppNotifications, setInAppNotifications] = useState(true);
   const [loading, setLoading] = useState(false);
+  const { addToast } = useToast();
 
   useEffect(()=>{
     let mounted = true;
-    mockApi.getSettings().then(s=>{
+    api.get('/notifications/settings').then(res=>{
       if (!mounted) return;
-      if (s) {
-        setEmailNotifications(Boolean(s.emailNotifications));
-        setWeeklyDigest(Boolean(s.weeklyDigest));
-      }
+      const s = res.data || {};
+      setEmailNotifications(Boolean(s.email_notifications));
+      setWeeklyDigest(Boolean(s.weekly_digest));
+      setInAppNotifications(Boolean(s.in_app_notifications));
+    }).catch(()=>{
+      if (!mounted) return;
     });
     return ()=>{ mounted=false };
   },[]);
 
   const save = async () => {
     setLoading(true);
-    await mockApi.postSettings({ emailNotifications, weeklyDigest });
+    try {
+      await api.put('/notifications/settings', {
+        email_notifications: emailNotifications,
+        weekly_digest: weeklyDigest,
+        in_app_notifications: inAppNotifications
+      });
+      addToast('Preferencias guardadas', { type: 'success' });
+    } catch (e) {
+      addToast('No se pudieron guardar las preferencias', { type: 'error' });
+    }
     setLoading(false);
-    alert('Preferencias guardadas (mock)');
   };
 
   return (
@@ -37,6 +50,10 @@ export default function RepresentativeSettings(){
         <label className="flex items-center gap-2 mb-3">
           <input aria-label="Resumen semanal" type="checkbox" checked={weeklyDigest} onChange={e=>setWeeklyDigest(e.target.checked)} />
           <span>Recibir resumen semanal</span>
+        </label>
+        <label className="flex items-center gap-2 mb-3">
+          <input aria-label="Notificaciones in-app" type="checkbox" checked={inAppNotifications} onChange={e=>setInAppNotifications(e.target.checked)} />
+          <span>Notificaciones en la app</span>
         </label>
         <div>
           <Button className="bg-blue-600 text-white" onClick={save} ariaLabel="Guardar preferencias">{loading ? 'Guardando...' : 'Guardar preferencias'}</Button>
