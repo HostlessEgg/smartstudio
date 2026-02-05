@@ -26,9 +26,9 @@ Archivo maestro para seguir progreso de features críticos: representantes, cons
 - [ ] Reglas de visibilidad para calendar endpoints
 
 ## Prioridad media (P2)
-- [ ] E2E: flujo solicitud → consentimiento → acceso (e2e_ui_test.sh)
-- [ ] Notificaciones y resúmenes configurables (email / toast)
-- [ ] Feature flags y rollout en staging
+- [x] E2E: flujo solicitud → consentimiento → acceso (e2e_ui_test.sh)
+- [x] Notificaciones y resúmenes configurables (email / toast)
+- [x] Feature flags y rollout en staging
 
 ## DoR (Definition of Ready) — checklist mínima para historia
 - Criterios de aceptación claros

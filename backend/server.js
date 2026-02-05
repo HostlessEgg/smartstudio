@@ -403,6 +403,100 @@ app.get('/api/admin/summary', authenticateToken, authorizeRoles(['admin']), asyn
     }
 });
 
+// Feature flags (evaluated by user)
+app.get('/api/feature-flags', authenticateToken, async (req, res) => {
+    const env = process.env.APP_ENV || process.env.NODE_ENV || 'development';
+    const userId = Number(req.user?.userId || 0);
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute(
+            'SELECT flag_key, enabled, rollout_percentage, environment FROM feature_flags WHERE environment IN (?, ?) ORDER BY environment DESC',
+            [env, 'all']
+        );
+        await connection.end();
+
+        const evaluated = {};
+        const seen = new Set();
+        const hash = (seed) => {
+            const base = Number.isFinite(seed) ? seed : 0;
+            return Math.abs((base * 9301 + 49297) % 100);
+        };
+
+        for (const row of rows) {
+            if (seen.has(row.flag_key)) continue;
+            seen.add(row.flag_key);
+
+            if (!row.enabled) {
+                evaluated[row.flag_key] = false;
+                continue;
+            }
+
+            const rollout = Number(row.rollout_percentage ?? 100);
+            if (rollout >= 100) {
+                evaluated[row.flag_key] = true;
+            } else if (rollout <= 0) {
+                evaluated[row.flag_key] = false;
+            } else {
+                evaluated[row.flag_key] = hash(userId) < rollout;
+            }
+        }
+
+        res.json(evaluated);
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo feature flags:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Feature flags (admin): list
+app.get('/api/admin/feature-flags', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const env = process.env.APP_ENV || process.env.NODE_ENV || 'development';
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        const [rows] = await connection.execute(
+            'SELECT id, flag_key, description, enabled, rollout_percentage, environment, created_at, updated_at FROM feature_flags WHERE environment IN (?, ?) ORDER BY flag_key ASC',
+            [env, 'all']
+        );
+        await connection.end();
+        res.json({ data: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error listando feature flags:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Feature flags (admin): upsert
+app.post('/api/admin/feature-flags', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const { flag_key, description, enabled, rollout_percentage, environment } = req.body || {};
+    if (!flag_key) return res.status(400).json({ error: 'flag_key requerido' });
+    const env = environment || process.env.APP_ENV || process.env.NODE_ENV || 'development';
+
+    const connection = await mysql.createConnection(dbConfig);
+    try {
+        await connection.execute(
+            `INSERT INTO feature_flags (flag_key, description, enabled, rollout_percentage, environment)
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE description = VALUES(description), enabled = VALUES(enabled), rollout_percentage = VALUES(rollout_percentage)`,
+            [
+                flag_key,
+                description || null,
+                enabled !== undefined ? Boolean(enabled) : false,
+                rollout_percentage !== undefined ? Number(rollout_percentage) : 100,
+                env
+            ]
+        );
+        await logAudit(req, 'update_feature_flag', 'feature_flag', flag_key, { enabled, rollout_percentage, environment: env });
+        await connection.end();
+        res.json({ message: 'Feature flag guardado', flag_key, environment: env });
+    } catch (err) {
+        await connection.end();
+        console.error('Error guardando feature flag:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Endpoint para consultar logs de auditoría (admin)
 app.get('/api/admin/audits', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
     const { page = 1, per_page = 50, q, action } = req.query;
