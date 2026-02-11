@@ -79,11 +79,27 @@ async function main() {
       const sql = fs.readFileSync(fullPath, 'utf8');
       console.log(`⬆️  Applying migration: ${fname}`);
       try {
-        await connection.query(sql);
+        const statements = sql
+          .split(';')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+
+        for (const stmt of statements) {
+          try {
+            await connection.query(stmt);
+          } catch (err) {
+            if (err && (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME')) {
+              console.log(`⚠️  Skipping statement (duplicate) in ${fname}`);
+              continue;
+            }
+            console.error(`❌ Failed applying ${fname}:`, err.message);
+            throw err;
+          }
+        }
+
         await connection.query('INSERT INTO migrations (filename) VALUES (?)', [fname]);
         console.log(`✅ Applied: ${fname}`);
       } catch (err) {
-        console.error(`❌ Failed applying ${fname}:`, err.message);
         throw err;
       }
     }

@@ -13,6 +13,7 @@ Prerequisites
 -------------
 - `mysql` CLI must be available in PATH.
 - Environment variables required: `DB_HOST`, `DB_USER`, `DB_NAME`. `DB_PASSWORD` optional (script handles it).
+- Env standard: use `backend/.env.example` as reference and copy to `backend/.env`.
 
 Example
 -------
@@ -22,6 +23,10 @@ From the repository root:
 cd backend
 DB_HOST=localhost DB_USER=root DB_PASSWORD=secret DB_NAME=smartstudio_lms ./scripts/run_migrations.sh
 ```
+
+Tip
+---
+- If you already have `backend/.env`, you can `export $(cat .env | xargs)` before running the script.
 
 Notes
 -----

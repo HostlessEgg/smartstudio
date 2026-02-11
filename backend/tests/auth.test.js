@@ -3,6 +3,12 @@ const request = require('supertest');
 const BASE = process.env.TEST_BASE_URL || 'http://localhost:5000';
 
 describe('Auth validation', () => {
+  test('csrf endpoint returns token', async () => {
+    const res = await request(BASE).get('/api/auth/csrf');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.csrfToken).toBeDefined();
+  });
+
   test('register rejects weak password', async () => {
     const res = await request(BASE)
       .post('/api/auth/register')
@@ -19,5 +25,10 @@ describe('Auth validation', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body.errors).toBeDefined();
+  });
+
+  test('me without token returns 401', async () => {
+    const res = await request(BASE).get('/api/auth/me');
+    expect(res.statusCode).toBe(401);
   });
 });

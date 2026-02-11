@@ -9,6 +9,11 @@ import rateLimit from 'express-rate-limit';
 import { check, validationResult } from 'express-validator';
 import path from 'path';
 import fs from 'fs';
+import cookieParser from 'cookie-parser';
+import morgan from 'morgan';
+import { dbConfig, getAdminConnection, getConnection } from './lib/db.js';
+import { logAudit } from './lib/audit.js';
+import { isProd, setAuthCookies, clearAuthCookies, setCsrfCookie, csrfProtection, verifyJwt } from './lib/auth.js';
 
 // Optional AWS S3 presign imports
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -16,13 +21,39 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import multer from 'multer';
 import representativesRouter from './routes/representatives.js';
 
-dotenv.config();
+const envPath = fs.existsSync(path.resolve(process.cwd(), '.env'))
+    ? path.resolve(process.cwd(), '.env')
+    : path.resolve(process.cwd(), 'backend', '.env');
+dotenv.config({ path: envPath });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// Legacy compatibility: normalize mysql.createConnection to shared helper
+mysql.createConnection = (config = dbConfig) => getConnection(config);
+
+if (isProd) {
+    app.set('trust proxy', 1);
+}
+
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
+
+// Request ID + logging
+app.use((req, res, next) => {
+    const incoming = req.headers['x-request-id'];
+    const requestId = incoming || crypto.randomUUID();
+    req.requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    next();
+});
+
+morgan.token('rid', (req) => req.requestId || '-');
+app.use(morgan(':date[iso] :status :method :url :response-time ms rid=:rid'));
 
 // Security headers
 app.use(helmet());
@@ -79,18 +110,37 @@ forumPostLimiter = conditional(rateLimit({
 
 app.use(apiLimiter);
 
-const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root', 
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'smartstudio_lms'
-};
+// CSRF helpers moved to lib/auth.js
+
+app.use(csrfProtection);
+
+const validate = (rules = []) => [
+    ...rules,
+    (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+        return next();
+    }
+];
 
 // uploads folder for local fallback
 const uploadsDir = path.join(process.cwd(), 'backend', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
+
+const MAX_UPLOAD_MB = Number(process.env.UPLOAD_MAX_MB || 20);
+const MAX_UPLOAD_BYTES = Math.max(1, MAX_UPLOAD_MB) * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME = new Set([
+    'application/pdf',
+    'image/png',
+    'image/jpeg',
+    'video/mp4',
+    'text/plain',
+    'application/zip',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
 
 // Serve uploads statically
 app.use('/uploads', express.static(uploadsDir));
@@ -99,7 +149,16 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/api/representatives', representativesRouter);
 
 // Multer for fallback multipart uploads
-const upload = multer({ dest: uploadsDir });
+const upload = multer({
+    dest: uploadsDir,
+    limits: { fileSize: MAX_UPLOAD_BYTES },
+    fileFilter: (_req, file, cb) => {
+        if (!ALLOWED_UPLOAD_MIME.has(file.mimetype)) {
+            return cb(new Error('Tipo de archivo no permitido'));
+        }
+        return cb(null, true);
+    }
+});
 
 // Configure S3 client if env vars provided
 let s3Client = null;
@@ -110,11 +169,7 @@ if (process.env.S3_BUCKET && process.env.AWS_REGION && process.env.AWS_ACCESS_KE
 // Crear conexión a la base de datos
 async function createDatabase() {
     try {
-        const connection = await mysql.createConnection({
-            host: dbConfig.host,
-            user: dbConfig.user,
-            password: dbConfig.password
-        });
+        const connection = await getAdminConnection();
         
         await connection.execute(`CREATE DATABASE IF NOT EXISTS ${dbConfig.database}`);
         console.log('Base de datos verificada/creada');
@@ -127,19 +182,21 @@ async function createDatabase() {
 // Middleware de autenticación
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const headerToken = authHeader && authHeader.split(' ')[1];
+    const cookieToken = req.cookies?.access_token;
+    const token = headerToken || cookieToken;
 
     if (!token) {
         return res.status(401).json({ error: 'Token de acceso requerido' });
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ error: 'Token inválido' });
-        }
+    try {
+        const user = verifyJwt(token);
         req.user = user;
         next();
-    });
+    } catch (err) {
+        return res.status(403).json({ error: 'Token inválido' });
+    }
 };
 
 // Middleware para autorizar roles
@@ -151,41 +208,25 @@ const authorizeRoles = (allowedRoles = []) => (req, res, next) => {
     next();
 };
 
-// Helper: registrar auditoría
-const logAudit = async (req, action, entity = null, entityId = null, details = null) => {
-    try {
-        const connection = await mysql.createConnection(dbConfig);
-        const userId = req.user ? req.user.userId : null;
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
-        await connection.execute(
-            'INSERT INTO audits (user_id, action, entity, entity_id, details, ip) VALUES (?, ?, ?, ?, ?, ?)',
-            [userId, action, entity, entityId ? String(entityId) : null, details ? JSON.stringify(details) : null, ip]
-        );
-        await connection.end();
-    } catch (err) {
-        console.error('Error registrando auditoría:', err);
-    }
-};
+// Helper: registrar auditoría (módulo externo)
 
 // RUTAS DE AUTENTICACIÓN
 
 app.post('/api/auth/register',
-    [
-        check('name').isString().notEmpty().withMessage('name requerido'),
-        check('email').isEmail().withMessage('email inválido'),
-        check('password')
-          .isLength({ min: 8 }).withMessage('password mínimo 8 caracteres')
-          .matches(/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])/)
-          .withMessage('password debe contener minúscula, mayúscula, número y símbolo'),
-        check('role').optional().isIn(['student','teacher','admin'])
-    ],
-    authLimiter,
-    async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+        validate([
+                check('name').isString().notEmpty().withMessage('name requerido'),
+                check('email').isEmail().withMessage('email inválido'),
+                check('password')
+                    .isLength({ min: 8 }).withMessage('password mínimo 8 caracteres')
+                    .matches(/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])/)
+                    .withMessage('password debe contener minúscula, mayúscula, número y símbolo'),
+                check('role').optional().isIn(['student','teacher','admin'])
+        ]),
+        authLimiter,
+        async (req, res) => {
     try {
         const { name, email, password, role = 'student' } = req.body;
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
 
         // Verificar si el usuario existe
         const [existing] = await connection.execute(
@@ -220,10 +261,13 @@ app.post('/api/auth/register',
             { expiresIn: '24h' }
         );
 
+        const csrfToken = setAuthCookies(res, token);
+
         res.status(201).json({
             message: 'Usuario creado exitosamente',
             token,
-            user: { id: result.insertId, name, email, role }
+            user: { id: result.insertId, name, email, role },
+            csrfToken
         });
 
         await connection.end();
@@ -233,15 +277,13 @@ app.post('/api/auth/register',
     }
 });
 
-app.post('/api/auth/login', [
+app.post('/api/auth/login', validate([
     check('email').isEmail().withMessage('email inválido'),
     check('password').isString().notEmpty().withMessage('password requerido')
-], authLimiter, async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+]), authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
 
         const [users] = await connection.execute(
             'SELECT * FROM users WHERE email = ?',
@@ -267,6 +309,8 @@ app.post('/api/auth/login', [
             { expiresIn: '24h' }
         );
 
+        const csrfToken = setAuthCookies(res, token);
+
         res.json({
             message: 'Login exitoso',
             token,
@@ -275,7 +319,8 @@ app.post('/api/auth/login', [
                 name: user.name,
                 email: user.email,
                 role: user.role
-            }
+            },
+            csrfToken
         });
 
         await connection.end();
@@ -283,6 +328,35 @@ app.post('/api/auth/login', [
         console.error('Error en login:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
     }
+});
+
+// CSRF token bootstrap (cookie-based auth)
+app.get('/api/auth/csrf', (req, res) => {
+    const existing = req.cookies?.csrf_token;
+    const csrfToken = existing || setCsrfCookie(res);
+    res.json({ csrfToken });
+});
+
+// Current user (cookie or header auth)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+    const userId = req.user?.userId;
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute('SELECT id, name, email, role, active FROM users WHERE id = ?', [userId]);
+        await connection.end();
+        if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+        return res.json({ user: rows[0] });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo usuario actual:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// Logout (clear cookies)
+app.post('/api/auth/logout', (req, res) => {
+    clearAuthCookies(res);
+    res.json({ message: 'Logout exitoso' });
 });
 
 // ---------- ENDPOINTS DE USUARIOS / ROLES ----------
@@ -299,7 +373,7 @@ app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), as
 
     const offset = (page - 1) * per_page;
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         // Build base WHERE clause
         let where = ' WHERE 1=1';
@@ -326,7 +400,7 @@ app.get('/api/users', authenticateToken, authorizeRoles(['teacher','admin']), as
         // Data page
         // Avoid using parameter placeholders for LIMIT/OFFSET because some MySQL drivers
         // treat them specially; inject numeric values safely since they are validated above.
-        const dataSql = `SELECT id, name, email, role, active, avatar_url, occupation, tags, organization, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
+        const dataSql = `SELECT id, name, email, role, active, avatar_url, occupation, tags, organization, created_at, updated_at FROM users ${where} ORDER BY created_at DESC LIMIT ${per_page} OFFSET ${offset}`;
         const dataParams = params.slice();
 
         const [rows] = await connection.execute(dataSql, dataParams);
@@ -354,7 +428,7 @@ app.get('/api/users/:id', authenticateToken, async (req, res) => {
         return res.status(403).json({ error: 'Permisos insuficientes' });
     }
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute('SELECT id, name, email, role, avatar_url, occupation, tags, organization, created_at FROM users WHERE id = ?', [id]);
         await connection.end();
@@ -369,7 +443,7 @@ app.get('/api/users/:id', authenticateToken, async (req, res) => {
 
 // Admin summary: counts and DB health
 app.get('/api/admin/summary', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [[{ users_count }]] = await connection.execute('SELECT COUNT(*) AS users_count FROM users');
         const [[{ courses_count }]] = await connection.execute('SELECT COUNT(*) AS courses_count FROM courses');
@@ -403,11 +477,52 @@ app.get('/api/admin/summary', authenticateToken, authorizeRoles(['admin']), asyn
     }
 });
 
+// Teacher summary: counts for dashboard
+app.get('/api/teacher/summary', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
+    const userId = req.user.userId;
+    const teacherId = req.user.role === 'admin' && req.query.teacherId ? Number(req.query.teacherId) : userId;
+    if (!teacherId || Number.isNaN(teacherId)) return res.status(400).json({ error: 'teacherId inválido' });
+
+    const connection = await getConnection();
+    try {
+        const [[{ courses_count }]] = await connection.execute('SELECT COUNT(*) AS courses_count FROM courses WHERE instructor_id = ?', [teacherId]);
+        const [[{ students_count }]] = await connection.execute(
+            `SELECT COUNT(DISTINCT e.student_id) AS students_count
+             FROM enrollments e
+             JOIN courses c ON c.id = e.course_id
+             WHERE c.instructor_id = ?`,
+            [teacherId]
+        );
+        const [[{ pending_submissions }]] = await connection.execute(
+            `SELECT COUNT(*) AS pending_submissions
+             FROM submissions s
+             JOIN assignments a ON a.id = s.assignment_id
+             WHERE a.created_by = ? AND (s.score IS NULL OR s.score = '')`,
+            [teacherId]
+        );
+        const [recentAssignments] = await connection.execute(
+            'SELECT id, title, start_at, end_at, created_at FROM assignments WHERE created_by = ? ORDER BY created_at DESC LIMIT 5',
+            [teacherId]
+        );
+        await connection.end();
+        res.json({
+            courses_count: Number(courses_count || 0),
+            students_count: Number(students_count || 0),
+            pending_submissions: Number(pending_submissions || 0),
+            recent_assignments: recentAssignments
+        });
+    } catch (err) {
+        await connection.end();
+        console.error('Error teacher summary:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Feature flags (evaluated by user)
 app.get('/api/feature-flags', authenticateToken, async (req, res) => {
     const env = process.env.APP_ENV || process.env.NODE_ENV || 'development';
     const userId = Number(req.user?.userId || 0);
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute(
             'SELECT flag_key, enabled, rollout_percentage, environment FROM feature_flags WHERE environment IN (?, ?) ORDER BY environment DESC',
@@ -452,7 +567,7 @@ app.get('/api/feature-flags', authenticateToken, async (req, res) => {
 // Feature flags (admin): list
 app.get('/api/admin/feature-flags', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
     const env = process.env.APP_ENV || process.env.NODE_ENV || 'development';
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute(
             'SELECT id, flag_key, description, enabled, rollout_percentage, environment, created_at, updated_at FROM feature_flags WHERE environment IN (?, ?) ORDER BY flag_key ASC',
@@ -473,7 +588,7 @@ app.post('/api/admin/feature-flags', authenticateToken, authorizeRoles(['admin']
     if (!flag_key) return res.status(400).json({ error: 'flag_key requerido' });
     const env = environment || process.env.APP_ENV || process.env.NODE_ENV || 'development';
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute(
             `INSERT INTO feature_flags (flag_key, description, enabled, rollout_percentage, environment)
@@ -504,7 +619,7 @@ app.get('/api/admin/audits', authenticateToken, authorizeRoles(['admin']), async
     const pp = Math.min(200, Math.max(1, Number(per_page)));
     const offset = (p - 1) * pp;
     try {
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         let where = ' WHERE 1=1';
         const params = [];
         if (action) { where += ' AND action = ?'; params.push(action); }
@@ -529,7 +644,7 @@ app.get('/api/admin/audits', authenticateToken, authorizeRoles(['admin']), async
 app.get('/api/admin/audits/export', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
     const { q, action } = req.query;
     try {
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         let where = ' WHERE 1=1';
         const params = [];
         if (action) { where += ' AND action = ?'; params.push(action); }
@@ -610,7 +725,7 @@ app.post('/api/admin/import/users', authenticateToken, authorizeRoles(['admin'])
     const hasHeader = header.includes('email') || header.includes('name') || header.includes('role') || header.includes('password');
     const dataLines = hasHeader ? lines.slice(1) : lines;
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     const report = { imported: 0, skipped: 0, errors: [], temp_passwords: [] };
     try {
         for (const [idx, line] of dataLines.entries()) {
@@ -682,7 +797,7 @@ app.post('/api/admin/enrollments/bulk', authenticateToken, authorizeRoles(['admi
     const hasHeader = header.includes('student_id') || header.includes('student_email') || header.includes('course_id');
     const dataLines = hasHeader ? lines.slice(1) : lines;
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     const report = { imported: 0, skipped: 0, errors: [] };
     try {
         for (const [idx, line] of dataLines.entries()) {
@@ -758,7 +873,7 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     }
 
     const { name, occupation, organization, avatar_url, tags } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const tagsVal = Array.isArray(tags) ? JSON.stringify(tags) : null;
         await connection.execute(
@@ -766,8 +881,9 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
             [name || null, occupation || null, organization || null, avatar_url || null, tagsVal, id]
         );
         await logAudit(req, 'update_user', 'user', id, { name, occupation, organization, tags });
+        const [rows] = await connection.execute('SELECT id, name, email, role, active, avatar_url, occupation, organization, tags FROM users WHERE id = ?', [id]);
         await connection.end();
-        res.json({ message: 'Usuario actualizado' });
+        res.json({ message: 'Usuario actualizado', user: rows[0] });
     } catch (err) {
         await connection.end();
         console.error('Error actualizando usuario:', err);
@@ -775,10 +891,302 @@ app.put('/api/users/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// ---------- ENDPOINTS DE MATERIAS ----------
+
+const normalizeTeachers = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+        try {
+            return JSON.parse(value);
+        } catch (err) {
+            return [];
+        }
+    }
+    return [];
+};
+
+app.get('/api/subjects', authenticateToken, async (req, res) => {
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute('SELECT id, code, name, grade, hours, sections, active, teachers FROM subjects ORDER BY name ASC');
+        await connection.end();
+        const normalized = rows.map(r => ({
+            ...r,
+            teachers: normalizeTeachers(r.teachers)
+        }));
+        res.json({ subjects: normalized });
+    } catch (err) {
+        await connection.end();
+        console.error('Error listando materias:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.post('/api/subjects', authenticateToken, authorizeRoles(['admin']), validate([
+    check('name').notEmpty(),
+    check('code').optional().isString()
+]), async (req, res) => {
+    const { code = null, name, grade = null, hours = null, sections = null, active = true, teachers = [] } = req.body || {};
+    const connection = await getConnection();
+    try {
+        const teachersVal = Array.isArray(teachers) ? JSON.stringify(teachers) : JSON.stringify([]);
+        const [ins] = await connection.execute(
+            'INSERT INTO subjects (code, name, grade, hours, sections, active, teachers) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [code, name, grade, hours, sections, active ? 1 : 0, teachersVal]
+        );
+        await logAudit(req, 'create_subject', 'subject', ins.insertId, { code, name });
+        const [rows] = await connection.execute('SELECT id, code, name, grade, hours, sections, active, teachers FROM subjects WHERE id = ?', [ins.insertId]);
+        await connection.end();
+        const row = rows[0];
+        res.status(201).json({ ...row, teachers: normalizeTeachers(row.teachers) });
+    } catch (err) {
+        await connection.end();
+        console.error('Error creando materia:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.put('/api/subjects/:id', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const id = Number(req.params.id);
+    const { code = null, name = null, grade = null, hours = null, sections = null, active = true, teachers = [] } = req.body || {};
+    const connection = await getConnection();
+    try {
+        const teachersVal = Array.isArray(teachers) ? JSON.stringify(teachers) : JSON.stringify([]);
+        await connection.execute(
+            'UPDATE subjects SET code = ?, name = ?, grade = ?, hours = ?, sections = ?, active = ?, teachers = ? WHERE id = ?',
+            [code, name, grade, hours, sections, active ? 1 : 0, teachersVal, id]
+        );
+        await logAudit(req, 'update_subject', 'subject', id, { code, name, grade, hours, sections, active, teachers });
+        const [rows] = await connection.execute('SELECT id, code, name, grade, hours, sections, active, teachers FROM subjects WHERE id = ?', [id]);
+        await connection.end();
+        const row = rows[0];
+        res.json({ ...row, teachers: normalizeTeachers(row.teachers) });
+    } catch (err) {
+        await connection.end();
+        console.error('Error actualizando materia:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.delete('/api/subjects/:id', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const id = Number(req.params.id);
+    const connection = await getConnection();
+    try {
+        await connection.execute('DELETE FROM subjects WHERE id = ?', [id]);
+        await logAudit(req, 'delete_subject', 'subject', id, null);
+        await connection.end();
+        res.json({ success: true });
+    } catch (err) {
+        await connection.end();
+        console.error('Error eliminando materia:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// ---------- ENDPOINTS DE MENSAJERÍA ----------
+
+app.post('/api/messages', authenticateToken, async (req, res) => {
+    const senderId = req.user?.userId;
+    const { to, recipientId, recipientEmail, subject = null, message, body } = req.body || {};
+    const content = message || body;
+    if (!senderId || !content) return res.status(400).json({ error: 'Datos requeridos' });
+
+    const connection = await getConnection();
+    try {
+        let resolvedRecipientId = recipientId ? Number(recipientId) : null;
+        let resolvedRecipientEmail = recipientEmail || null;
+
+        if (!resolvedRecipientId && to) {
+            if (String(to).includes('@')) {
+                resolvedRecipientEmail = String(to).trim();
+            } else if (!Number.isNaN(Number(to))) {
+                resolvedRecipientId = Number(to);
+            }
+        }
+
+        if (!resolvedRecipientId && resolvedRecipientEmail) {
+            const [rows] = await connection.execute('SELECT id FROM users WHERE email = ?', [resolvedRecipientEmail]);
+            if (!rows.length) {
+                await connection.end();
+                return res.status(404).json({ error: 'Destinatario no encontrado' });
+            }
+            resolvedRecipientId = rows[0].id;
+        }
+
+        if (!resolvedRecipientId) {
+            await connection.end();
+            return res.status(400).json({ error: 'Destinatario inválido' });
+        }
+
+        const [ins] = await connection.execute(
+            'INSERT INTO messages (sender_id, recipient_id, subject, body) VALUES (?, ?, ?, ?)',
+            [senderId, resolvedRecipientId, subject, content]
+        );
+        await logAudit(req, 'send_message', 'message', ins.insertId, { recipientId: resolvedRecipientId });
+        await connection.end();
+        res.status(201).json({ id: ins.insertId, message: 'Mensaje enviado' });
+    } catch (err) {
+        await connection.end();
+        console.error('Error enviando mensaje:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.get('/api/messages/inbox', authenticateToken, async (req, res) => {
+    const userId = req.user?.userId;
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute(
+            `SELECT m.id, m.subject, m.body, m.created_at, m.read_at,
+                    u.id as sender_id, u.name as sender_name, u.email as sender_email
+             FROM messages m
+             JOIN users u ON u.id = m.sender_id
+             WHERE m.recipient_id = ?
+             ORDER BY m.created_at DESC
+             LIMIT 200`,
+            [userId]
+        );
+        await connection.end();
+        res.json({ messages: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo inbox:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.get('/api/messages/sent', authenticateToken, async (req, res) => {
+    const userId = req.user?.userId;
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute(
+            `SELECT m.id, m.subject, m.body, m.created_at,
+                    u.id as recipient_id, u.name as recipient_name, u.email as recipient_email
+             FROM messages m
+             JOIN users u ON u.id = m.recipient_id
+             WHERE m.sender_id = ?
+             ORDER BY m.created_at DESC
+             LIMIT 200`,
+            [userId]
+        );
+        await connection.end();
+        res.json({ messages: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo enviados:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.post('/api/messages/:id/read', authenticateToken, async (req, res) => {
+    const userId = req.user?.userId;
+    const id = Number(req.params.id);
+    const connection = await getConnection();
+    try {
+        await connection.execute(
+            'UPDATE messages SET read_at = NOW() WHERE id = ? AND recipient_id = ? AND read_at IS NULL',
+            [id, userId]
+        );
+        await connection.end();
+        res.json({ success: true });
+    } catch (err) {
+        await connection.end();
+        console.error('Error marcando mensaje leído:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// ---------- ENDPOINTS DE ANUNCIOS ----------
+
+app.get('/api/announcements', authenticateToken, async (req, res) => {
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute(
+            `SELECT a.id, a.title, a.body, a.priority, a.active, a.created_at,
+                    u.name as author_name
+             FROM announcements a
+             LEFT JOIN users u ON u.id = a.created_by
+             WHERE a.active = 1
+             ORDER BY a.created_at DESC
+             LIMIT 200`
+        );
+        await connection.end();
+        res.json({ announcements: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo anuncios:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.post('/api/announcements', authenticateToken, authorizeRoles(['teacher','admin']), validate([
+    check('title').isString().notEmpty(),
+    check('body').isString().notEmpty(),
+    check('priority').optional().isIn(['low','normal','high'])
+]), async (req, res) => {
+    const { title, body, priority = 'normal', active = true } = req.body || {};
+    const connection = await getConnection();
+    try {
+        const [ins] = await connection.execute(
+            'INSERT INTO announcements (title, body, priority, active, created_by) VALUES (?, ?, ?, ?, ?)',
+            [title, body, priority, active ? 1 : 0, req.user.userId]
+        );
+        await logAudit(req, 'create_announcement', 'announcement', ins.insertId, { title, priority });
+        const [rows] = await connection.execute('SELECT * FROM announcements WHERE id = ?', [ins.insertId]);
+        await connection.end();
+        res.status(201).json({ announcement: rows[0] });
+    } catch (err) {
+        await connection.end();
+        console.error('Error creando anuncio:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// ---------- ENDPOINTS DE RECURSOS ----------
+
+app.get('/api/resources', authenticateToken, async (req, res) => {
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute(
+            'SELECT id, title, file_type, file_size, url, created_at FROM resources ORDER BY created_at DESC LIMIT 200'
+        );
+        await connection.end();
+        res.json({ resources: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo recursos:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+// ---------- ENDPOINTS DE BIBLIOTECA ----------
+
+app.get('/api/library', authenticateToken, async (req, res) => {
+    const q = req.query.q ? String(req.query.q).trim() : '';
+    const connection = await getConnection();
+    try {
+        let sql = 'SELECT id, title, author, status, created_at FROM library_books WHERE 1=1';
+        const params = [];
+        if (q) {
+            sql += ' AND (title LIKE ? OR author LIKE ?)';
+            params.push(`%${q}%`, `%${q}%`);
+        }
+        sql += ' ORDER BY created_at DESC LIMIT 200';
+        const [rows] = await connection.execute(sql, params);
+        await connection.end();
+        res.json({ books: rows });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo biblioteca:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Preferencias de notificaciones (email / resumen / in-app)
 app.get('/api/notifications/settings', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute(
             'SELECT email_notifications, weekly_digest, in_app_notifications FROM notification_settings WHERE user_id = ? LIMIT 1',
@@ -796,10 +1204,89 @@ app.get('/api/notifications/settings', authenticateToken, async (req, res) => {
     }
 });
 
+// System settings (admin)
+app.get('/api/settings', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute('SELECT * FROM system_settings WHERE id = 1');
+        if (!rows.length) {
+            await connection.execute(
+                `INSERT INTO system_settings (id, institution_name, school_year, period_name, period_start, period_end, notifications_enabled, allow_teacher_registration, maintenance_mode)
+                 VALUES (1, 'Liceo Bolivariano "Libertador"', '2023-2024', '1er Lapso', '2023-09-15', '2023-12-15', TRUE, TRUE, FALSE)`
+            );
+            const [seeded] = await connection.execute('SELECT * FROM system_settings WHERE id = 1');
+            await connection.end();
+            return res.json(seeded[0]);
+        }
+        await connection.end();
+        return res.json(rows[0]);
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo settings:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+app.put('/api/settings', authenticateToken, authorizeRoles(['admin']), async (req, res) => {
+    const {
+        institution_name,
+        school_year,
+        period_name,
+        period_start,
+        period_end,
+        notifications_enabled,
+        allow_teacher_registration,
+        maintenance_mode
+    } = req.body || {};
+    const connection = await getConnection();
+    try {
+        await connection.execute(
+            `INSERT INTO system_settings (id, institution_name, school_year, period_name, period_start, period_end, notifications_enabled, allow_teacher_registration, maintenance_mode)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                institution_name = VALUES(institution_name),
+                school_year = VALUES(school_year),
+                period_name = VALUES(period_name),
+                period_start = VALUES(period_start),
+                period_end = VALUES(period_end),
+                notifications_enabled = VALUES(notifications_enabled),
+                allow_teacher_registration = VALUES(allow_teacher_registration),
+                maintenance_mode = VALUES(maintenance_mode)`,
+            [
+                institution_name || null,
+                school_year || null,
+                period_name || null,
+                period_start || null,
+                period_end || null,
+                notifications_enabled ? 1 : 0,
+                allow_teacher_registration ? 1 : 0,
+                maintenance_mode ? 1 : 0
+            ]
+        );
+        await logAudit(req, 'update_system_settings', 'system_settings', 1, {
+            institution_name,
+            school_year,
+            period_name,
+            period_start,
+            period_end,
+            notifications_enabled,
+            allow_teacher_registration,
+            maintenance_mode
+        });
+        const [rows] = await connection.execute('SELECT * FROM system_settings WHERE id = 1');
+        await connection.end();
+        return res.json(rows[0]);
+    } catch (err) {
+        await connection.end();
+        console.error('Error actualizando settings:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 app.put('/api/notifications/settings', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const { email_notifications, weekly_digest, in_app_notifications } = req.body || {};
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute(
             `INSERT INTO notification_settings (user_id, email_notifications, weekly_digest, in_app_notifications)
@@ -823,13 +1310,11 @@ app.put('/api/notifications/settings', authenticateToken, async (req, res) => {
 });
 
 // Asignar/setear role a un usuario (solo Admin)
-app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ check('role').isIn(['student','teacher','admin','guest']) ], async (req, res) => {
+app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), validate([ check('role').isIn(['student','teacher','admin','guest']) ]), async (req, res) => {
     const id = Number(req.params.id);
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { role } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute('UPDATE users SET role = ? WHERE id = ?', [role, id]);
         await logAudit(req, 'set_user_role', 'user', id, { role });
@@ -843,15 +1328,13 @@ app.post('/api/users/:id/role', authenticateToken, authorizeRoles(['admin']), [ 
 });
 
 // Resetear contraseña de un usuario (solo Admin)
-app.post('/api/users/:id/reset-password', authenticateToken, authorizeRoles(['admin']), [
+app.post('/api/users/:id/reset-password', authenticateToken, authorizeRoles(['admin']), validate([
     check('password').isLength({ min: 8 }).withMessage('password mínimo 8 caracteres')
-], async (req, res) => {
+]), async (req, res) => {
     const id = Number(req.params.id);
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { password } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const hashed = await bcrypt.hash(password, 10);
         const [resUpd] = await connection.execute('UPDATE users SET password = ? WHERE id = ?', [hashed, id]);
@@ -876,7 +1359,7 @@ app.post('/api/users/bulk-role', authenticateToken, authorizeRoles(['admin']), a
         if (!ids.length) return res.status(400).json({ error: 'ids requeridos' });
 
         const placeholders = ids.map(() => '?').join(',');
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         try {
             const [resUpd] = await connection.execute(
                 `UPDATE users SET role = ? WHERE id IN (${placeholders})`,
@@ -903,7 +1386,7 @@ app.post('/api/users/bulk-deactivate', authenticateToken, authorizeRoles(['admin
         if (!ids.length) return res.status(400).json({ error: 'ids requeridos' });
 
         const placeholders = ids.map(() => '?').join(',');
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         try {
             const [resUpd] = await connection.execute(
                 `UPDATE users SET active = 0 WHERE id IN (${placeholders})`,
@@ -930,7 +1413,7 @@ app.post('/api/users/bulk-reactivate', authenticateToken, authorizeRoles(['admin
         if (!ids.length) return res.status(400).json({ error: 'ids requeridos' });
 
         const placeholders = ids.map(() => '?').join(',');
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         try {
             const [resUpd] = await connection.execute(
                 `UPDATE users SET active = 1 WHERE id IN (${placeholders})`,
@@ -963,7 +1446,7 @@ app.get('/api/courses', async (req, res) => {
         per_page = Math.min(per_page, 100);
         const offset = (page - 1) * per_page;
 
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
 
         let where = ' WHERE c.is_published = true';
         const params = [];
@@ -992,7 +1475,7 @@ app.get('/api/courses', async (req, res) => {
 app.get('/api/my-courses', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const role = req.user.role;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         let rows;
         if (role === 'student') {
@@ -1035,7 +1518,7 @@ app.get('/api/teacher/courses', authenticateToken, authorizeRoles(['teacher','ad
     const offset = (page - 1) * per_page;
     const q = req.query.q ? String(req.query.q).trim() : '';
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const params = [];
         let where = 'WHERE 1=1';
@@ -1067,7 +1550,7 @@ app.get('/api/teacher/courses', authenticateToken, authorizeRoles(['teacher','ad
 app.get('/api/teacher/activities', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const courseId = req.query.course_id;
     if (!courseId) return res.status(400).json({ error: 'course_id requerido' });
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         // verify ownership for teachers
         if (req.user.role === 'teacher') {
@@ -1093,7 +1576,7 @@ app.get('/api/teacher/activities', authenticateToken, authorizeRoles(['teacher',
 app.post('/api/teacher/activities', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const { course_id, title, description, due_at, attachments } = req.body;
     if (!course_id || !title) return res.status(400).json({ error: 'course_id y title son requeridos' });
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         // verify ownership for teachers
         if (req.user.role === 'teacher') {
@@ -1130,7 +1613,7 @@ app.post('/api/teacher/activities', authenticateToken, authorizeRoles(['teacher'
 
 app.get('/api/courses/:id', async (req, res) => {
     try {
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         
         const [courses] = await connection.execute(`
             SELECT c.*, u.name as instructor_name 
@@ -1173,13 +1656,11 @@ app.get('/api/courses/:id', async (req, res) => {
 });
 
 // Crear un curso (teacher/admin)
-app.post('/api/courses', authenticateToken, authorizeRoles(['teacher','admin']), [
+app.post('/api/courses', authenticateToken, authorizeRoles(['teacher','admin']), validate([
     check('title').isString().notEmpty().withMessage('title requerido')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+]), async (req, res) => {
     const { title, description, category, level, instructor_id, modules } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         // Basic validation for nested structure
         if (modules && !Array.isArray(modules)) {
@@ -1266,7 +1747,7 @@ app.post('/api/courses', authenticateToken, authorizeRoles(['teacher','admin']),
 app.put('/api/courses/:id', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const id = req.params.id;
     const { title, description, category, level } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute(
             'UPDATE courses SET title = ?, description = ?, category = ?, level = ?, updated_at = NOW() WHERE id = ?',
@@ -1283,12 +1764,12 @@ app.put('/api/courses/:id', authenticateToken, authorizeRoles(['teacher','admin'
 });
 
 // Publicar / cambiar estado de curso (teacher/admin)
-app.post('/api/courses/:id/state', authenticateToken, authorizeRoles(['teacher','admin']), [
+app.post('/api/courses/:id/state', authenticateToken, authorizeRoles(['teacher','admin']), validate([
     check('state').isIn(['draft','published','archived']).withMessage('state inválido')
-], async (req, res) => {
+]), async (req, res) => {
     const id = req.params.id;
     const { state } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute('UPDATE courses SET state = ?, updated_at = NOW() WHERE id = ?', [state, id]);
         await logAudit(req, 'change_course_state', 'course', id, { state });
@@ -1302,14 +1783,12 @@ app.post('/api/courses/:id/state', authenticateToken, authorizeRoles(['teacher',
 });
 
 // Inscribir usuario a un curso (simple)
-app.post('/api/enrollments', authenticateToken, authorizeRoles(['teacher','admin']), [
+app.post('/api/enrollments', authenticateToken, authorizeRoles(['teacher','admin']), validate([
     check('student_id').isInt(),
     check('course_id').isInt()
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+]), async (req, res) => {
     const { student_id, course_id } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [result] = await connection.execute('INSERT IGNORE INTO enrollments (student_id, course_id) VALUES (?, ?)', [student_id, course_id]);
         await logAudit(req, 'enroll_user', 'enrollment', result.insertId || null, { student_id, course_id });
@@ -1328,7 +1807,7 @@ app.post('/api/courses/:id/enroll', authenticateToken, async (req, res) => {
     const studentId = req.user.userId;
     if (!courseId || Number.isNaN(courseId)) return res.status(400).json({ error: 'Invalid course id' });
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         // verify course exists
         const [courses] = await connection.execute('SELECT id FROM courses WHERE id = ?', [courseId]);
@@ -1361,7 +1840,7 @@ app.get('/api/courses/:id/enrolled', authenticateToken, async (req, res) => {
     const studentId = req.user.userId;
     if (!courseId || Number.isNaN(courseId)) return res.status(400).json({ error: 'Invalid course id' });
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute('SELECT id FROM enrollments WHERE student_id = ? AND course_id = ?', [studentId, courseId]);
         await connection.end();
@@ -1376,7 +1855,7 @@ app.get('/api/courses/:id/enrolled', authenticateToken, async (req, res) => {
 // Endpoint optimizado para devolver todas las lecciones con contexto (curso/módulo)
 app.get('/api/lessons', async (req, res) => {
     try {
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         const [rows] = await connection.execute(`
             SELECT l.id as lesson_id, l.title as lesson_title, l.order_index as lesson_order,
                    m.id as module_id, m.title as module_title, m.order_index as module_order,
@@ -1396,7 +1875,7 @@ app.get('/api/lessons', async (req, res) => {
 
 // Endpoint para obtener el curriculum estructurado (niveles -> grados -> asignaturas)
 app.get('/api/curriculum', async (req, res) => {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute(`
             SELECT lv.id as level_id, lv.name as level_name,
@@ -1452,6 +1931,12 @@ app.get('/api/curriculum', async (req, res) => {
     app.post('/api/uploads/presign', authenticateToken, async (req, res) => {
         const { filename, contentType } = req.body || {};
         if (!filename) return res.status(400).json({ error: 'filename requerido' });
+        if (contentType && !ALLOWED_UPLOAD_MIME.has(contentType)) {
+            return res.status(400).json({ error: 'Tipo de archivo no permitido' });
+        }
+        if (String(filename).length > 200) {
+            return res.status(400).json({ error: 'filename demasiado largo' });
+        }
 
         // If S3 configured, create presigned PUT URL
         if (s3Client) {
@@ -1476,16 +1961,19 @@ app.get('/api/curriculum', async (req, res) => {
     });
 
     // Fallback endpoint to accept multipart file upload and return a local URL
-    app.post('/api/uploads', authenticateToken, upload.single('file'), async (req, res) => {
-        try {
-            if (!req.file) return res.status(400).json({ error: 'file required' });
-            const localPath = `/uploads/${req.file.filename}`;
-            await logAudit(req, 'upload_file', 'upload', null, { originalName: req.file.originalname, path: localPath });
-            res.status(201).json({ fileUrl: `${req.protocol}://${req.get('host')}${localPath}` });
-        } catch (err) {
-            console.error('Error storing uploaded file:', err);
-            res.status(500).json({ error: 'Error guardando archivo' });
-        }
+    app.post('/api/uploads', authenticateToken, (req, res) => {
+        upload.single('file')(req, res, async (err) => {
+            if (err) return res.status(400).json({ error: err.message || 'Archivo inválido' });
+            try {
+                if (!req.file) return res.status(400).json({ error: 'file required' });
+                const localPath = `/uploads/${req.file.filename}`;
+                await logAudit(req, 'upload_file', 'upload', null, { originalName: req.file.originalname, path: localPath, mime: req.file.mimetype, size: req.file.size });
+                res.status(201).json({ fileUrl: `${req.protocol}://${req.get('host')}${localPath}` });
+            } catch (e) {
+                console.error('Error storing uploaded file:', e);
+                res.status(500).json({ error: 'Error guardando archivo' });
+            }
+        });
     });
 
 // ---------- ENDPOINTS PARA ASSIGNMENTS (CALENDARIO) ----------
@@ -1504,7 +1992,7 @@ app.get('/api/assignments', authenticateToken, async (req, res) => {
         effectiveCreatedBy = req.user.userId;
     }
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         let sql = 'SELECT a.*, g.name as grade_name, s.name as subject_name, u.name as author_name FROM assignments a LEFT JOIN curriculum_grades g ON a.grade_id = g.id LEFT JOIN subjects s ON a.subject_id = s.id LEFT JOIN users u ON a.created_by = u.id WHERE 1=1';
         const params = [];
@@ -1530,7 +2018,7 @@ app.get('/api/my/assignments', authenticateToken, async (req, res) => {
     const studentId = req.user.userId;
     const gradeId = req.query.gradeId || req.user.grade_id || null;
     const subjectId = req.query.subjectId || null;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         let sql = `SELECT a.*, g.name as grade_name, s.name as subject_name,
                    sub.id as submission_id, sub.score, sub.feedback, sub.created_at as submitted_at
@@ -1558,15 +2046,105 @@ app.get('/api/my/assignments', authenticateToken, async (req, res) => {
     }
 });
 
+// Attendance summary for students (derived from assignments/submissions)
+app.get('/api/attendance', authenticateToken, authorizeRoles(['student']), async (req, res) => {
+    const studentId = req.user.userId;
+    const month = req.query.month || null; // YYYY-MM
+    const now = new Date();
+    let year = now.getFullYear();
+    let monthIndex = now.getMonth();
+
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+        year = Number(month.split('-')[0]);
+        monthIndex = Number(month.split('-')[1]) - 1;
+    }
+
+    const start = new Date(Date.UTC(year, monthIndex, 1));
+    const end = new Date(Date.UTC(year, monthIndex + 1, 1));
+    const startIso = start.toISOString().slice(0, 10);
+    const endIso = end.toISOString().slice(0, 10);
+
+    const connection = await getConnection();
+    try {
+        const [rows] = await connection.execute(
+            `SELECT a.id, a.start_at, s.id as submission_id, subj.name as subject_name
+             FROM assignments a
+             LEFT JOIN subjects subj ON a.subject_id = subj.id
+             LEFT JOIN submissions s ON s.assignment_id = a.id AND s.student_id = ?
+             WHERE a.start_at >= ? AND a.start_at < ?
+             ORDER BY a.start_at ASC`,
+            [studentId, startIso, endIso]
+        );
+        await connection.end();
+
+        const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+        const dayMap = new Map();
+        const subjectMap = new Map();
+        let totalAssignments = 0;
+        let submittedCount = 0;
+
+        rows.forEach(r => {
+            if (!r.start_at) return;
+            const day = new Date(r.start_at).getUTCDate();
+            const key = String(day).padStart(2, '0');
+            const hasSubmission = !!r.submission_id;
+            totalAssignments += 1;
+            if (hasSubmission) submittedCount += 1;
+
+            const existing = dayMap.get(key) || { day, status: 'event' };
+            if (hasSubmission) existing.status = 'present';
+            dayMap.set(key, existing);
+
+            const subject = r.subject_name || 'Sin materia';
+            if (!subjectMap.has(subject)) subjectMap.set(subject, { subject, total: 0, submitted: 0 });
+            const entry = subjectMap.get(subject);
+            entry.total += 1;
+            if (hasSubmission) entry.submitted += 1;
+        });
+
+        const days = [];
+        for (let d = 1; d <= daysInMonth; d += 1) {
+            const key = String(d).padStart(2, '0');
+            const entry = dayMap.get(key);
+            days.push({ day: d, status: entry?.status || 'none' });
+        }
+
+        const attendancePercent = totalAssignments > 0
+            ? Math.round((submittedCount / totalAssignments) * 100)
+            : 0;
+
+        const subjects = Array.from(subjectMap.values()).map(s => ({
+            subject: s.subject,
+            total: s.total,
+            submitted: s.submitted,
+            percent: s.total > 0 ? Math.round((s.submitted / s.total) * 100) : 0
+        }));
+
+        res.json({
+            month: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
+            summary: {
+                totalAssignments,
+                submittedCount,
+                pendingCount: Math.max(0, totalAssignments - submittedCount),
+                attendancePercent
+            },
+            days,
+            subjects
+        });
+    } catch (err) {
+        await connection.end();
+        console.error('Error obteniendo asistencia:', err);
+        res.status(500).json({ error: 'Error interno' });
+    }
+});
+
 // Crear assignment (teacher/admin)
-app.post('/api/assignments', authenticateToken, authorizeRoles(['teacher','admin']), [
+app.post('/api/assignments', authenticateToken, authorizeRoles(['teacher','admin']), validate([
     check('title').isString().notEmpty(),
     check('start_at').isISO8601().withMessage('start_at debe ser fecha ISO')
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+]), async (req, res) => {
     const { title, description, start_at, end_at, grade_id, subject_id } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [result] = await connection.execute('INSERT INTO assignments (title, description, start_at, end_at, grade_id, subject_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)', [title, description || null, start_at, end_at || null, grade_id || null, subject_id || null, req.user.userId]);
         await connection.end();
@@ -1582,7 +2160,7 @@ app.post('/api/assignments', authenticateToken, authorizeRoles(['teacher','admin
 app.put('/api/assignments/:id', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const id = req.params.id;
     const { title, description, start_at, end_at, grade_id, subject_id } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute('UPDATE assignments SET title = ?, description = ?, start_at = ?, end_at = ?, grade_id = ?, subject_id = ? WHERE id = ?', [title, description || null, start_at, end_at || null, grade_id || null, subject_id || null, id]);
         await connection.end();
@@ -1597,7 +2175,7 @@ app.put('/api/assignments/:id', authenticateToken, authorizeRoles(['teacher','ad
 // Borrar assignment
 app.delete('/api/assignments/:id', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const id = req.params.id;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.execute('DELETE FROM assignments WHERE id = ?', [id]);
         await connection.end();
@@ -1618,7 +2196,7 @@ app.post('/api/assignments/:id/submissions', authenticateToken, async (req, res)
     const { text_submission, file_url } = req.body;
     if (!assignmentId || Number.isNaN(assignmentId)) return res.status(400).json({ error: 'Invalid assignment id' });
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         // verify assignment exists
         const [assignRows] = await connection.execute('SELECT id, start_at FROM assignments WHERE id = ?', [assignmentId]);
@@ -1645,7 +2223,7 @@ app.post('/api/assignments/:id/submissions', authenticateToken, async (req, res)
 // Instructors: list submissions for an assignment
 app.get('/api/assignments/:id/submissions', authenticateToken, authorizeRoles(['teacher','admin']), async (req, res) => {
     const assignmentId = Number(req.params.id);
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute(
             `SELECT s.*, u.name as student_name, u.email as student_email
@@ -1668,7 +2246,7 @@ app.get('/api/submissions/:id', authenticateToken, async (req, res) => {
     const subId = Number(req.params.id);
     const userId = req.user.userId;
     const userRole = req.user.role;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute('SELECT * FROM submissions WHERE id = ?', [subId]);
         if (rows.length === 0) { await connection.end(); return res.status(404).json({ error: 'Submission not found' }); }
@@ -1690,7 +2268,7 @@ app.get('/api/submissions/:id', authenticateToken, async (req, res) => {
 app.get('/api/my/submissions', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const assignmentId = req.query.assignment_id ? Number(req.query.assignment_id) : null;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         let sql = `SELECT s.*, a.title as assignment_title FROM submissions s LEFT JOIN assignments a ON s.assignment_id = a.id WHERE s.student_id = ?`;
         const params = [userId];
@@ -1710,15 +2288,13 @@ app.get('/api/my/submissions', authenticateToken, async (req, res) => {
 });
 
 // Grade a submission (teacher/admin)
-app.post('/api/submissions/:id/grade', authenticateToken, authorizeRoles(['teacher','admin']), [
+app.post('/api/submissions/:id/grade', authenticateToken, authorizeRoles(['teacher','admin']), validate([
     check('score').optional().isNumeric(),
     check('feedback').optional().isString()
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+]), async (req, res) => {
     const subId = Number(req.params.id);
     const { score, feedback } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [rows] = await connection.execute('SELECT * FROM submissions WHERE id = ?', [subId]);
         if (rows.length === 0) { await connection.end(); return res.status(404).json({ error: 'Submission not found' }); }
@@ -1743,7 +2319,7 @@ app.get('/api/config', (req, res) => {
 // RUTAS DE PROGRESO
 app.get('/api/progress/:courseId', authenticateToken, async (req, res) => {
     try {
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
         const studentId = req.user.userId;
         const courseId = req.params.courseId;
 
@@ -1768,7 +2344,7 @@ app.post('/api/progress/complete-lesson', authenticateToken, async (req, res) =>
     try {
         const { lessonId, courseId } = req.body;
         const studentId = req.user.userId;
-        const connection = await mysql.createConnection(dbConfig);
+        const connection = await getConnection();
 
         await connection.execute(`
             INSERT INTO student_progress (student_id, lesson_id, course_id, is_completed, completed_at)
@@ -1790,18 +2366,15 @@ app.post('/api/progress/complete-lesson', authenticateToken, async (req, res) =>
 app.post('/api/quizzes',
     authenticateToken,
     authorizeRoles(['teacher','admin']),
-    [
+    validate([
         check('lessonId').isInt().withMessage('lessonId debe ser entero'),
         check('title').isString().notEmpty().withMessage('title requerido'),
         check('questions').optional().isArray().withMessage('questions debe ser un array')
-    ],
+    ]),
     async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
     const { lessonId, title, questions = [] } = req.body;
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.beginTransaction();
 
@@ -1852,7 +2425,7 @@ app.post('/api/quizzes',
 // Obtener quiz por lessonId (vista para estudiantes) - oculta respuestas correctas
 app.get('/api/quizzes/lesson/:lessonId', authenticateToken, async (req, res) => {
     const lessonId = req.params.lessonId;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [quizzes] = await connection.execute('SELECT * FROM quizzes WHERE lesson_id = ?', [lessonId]);
         for (const quiz of quizzes) {
@@ -1875,7 +2448,7 @@ app.get('/api/quizzes/lesson/:lessonId', authenticateToken, async (req, res) => 
 // Obtener quiz por id (si es teacher/admin, incluye la respuesta correcta)
 app.get('/api/quizzes/:id', authenticateToken, async (req, res) => {
     const quizId = req.params.id;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [quizzes] = await connection.execute('SELECT * FROM quizzes WHERE id = ?', [quizId]);
         if (quizzes.length === 0) {
@@ -1907,16 +2480,13 @@ app.get('/api/quizzes/:id', authenticateToken, async (req, res) => {
 app.post('/api/quizzes/:id/submit',
     authenticateToken,
     quizSubmitLimiter,
-    [ check('answers').isArray().withMessage('answers debe ser un array') ],
+    validate([ check('answers').isArray().withMessage('answers debe ser un array') ]),
     async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
     const quizId = req.params.id;
     const studentId = req.user.userId;
     const { answers = [] } = req.body; // [{ questionId, choiceId }]
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.beginTransaction();
 
@@ -2013,19 +2583,16 @@ app.post('/api/quizzes/:id/submit',
 // Crear thread en foro (curso o lección)
 app.post('/api/forums/threads',
     authenticateToken,
-    [
+    validate([
         check('title').isString().notEmpty().withMessage('title requerido'),
         check('content').isString().notEmpty().withMessage('content requerido'),
         check('courseId').optional().isInt(),
         check('lessonId').optional().isInt()
-    ],
+    ]),
     async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
     const { courseId = null, lessonId = null, title, content } = req.body;
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         await connection.beginTransaction();
         const [tRes] = await connection.execute(
@@ -2048,7 +2615,7 @@ app.post('/api/forums/threads',
 // Obtener threads por curso o lección
 app.get('/api/forums/threads', async (req, res) => {
     const { courseId, lessonId } = req.query;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         let rows;
         if (lessonId) {
@@ -2070,7 +2637,7 @@ app.get('/api/forums/threads', async (req, res) => {
 // Obtener posts de un thread
 app.get('/api/forums/threads/:id/posts', async (req, res) => {
     const threadId = req.params.id;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [posts] = await connection.execute('SELECT p.*, u.name as author_name FROM forum_posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.thread_id = ? ORDER BY p.created_at', [threadId]);
         res.json(posts);
@@ -2086,14 +2653,11 @@ app.get('/api/forums/threads/:id/posts', async (req, res) => {
 app.post('/api/forums/threads/:id/posts',
     authenticateToken,
     forumPostLimiter,
-    [ check('content').isString().notEmpty().withMessage('content requerido') ],
+    validate([ check('content').isString().notEmpty().withMessage('content requerido') ]),
     async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
     const threadId = req.params.id;
     const { content } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [resInsert] = await connection.execute('INSERT INTO forum_posts (thread_id, user_id, content) VALUES (?, ?, ?)', [threadId, req.user.userId, content]);
         res.status(201).json({ message: 'Post agregado', postId: resInsert.insertId });
@@ -2111,14 +2675,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // Cohortes: crear
-app.post('/api/cohorts', authenticateToken, authorizeRoles(['teacher','admin']), [
+app.post('/api/cohorts', authenticateToken, authorizeRoles(['teacher','admin']), validate([
     check('name').isString().notEmpty(),
     check('course_id').isInt()
-], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+]), async (req, res) => {
     const { name, course_id, start_date, end_date, rules, max_capacity, visibility } = req.body;
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     try {
         const [result] = await connection.execute(
             'INSERT INTO cohorts (name, course_id, start_date, end_date, rules, max_capacity, visibility) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -2140,7 +2702,7 @@ app.post('/api/cohorts/:id/import-members', authenticateToken, authorizeRoles(['
     const { csv } = req.body; // expects CSV text
     if (!csv) return res.status(400).json({ error: 'csv requerido en body' });
     const lines = csv.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     const report = { imported: 0, skipped: 0, errors: [] };
     try {
         for (const line of lines) {

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 
 const AuthContext = createContext();
 
@@ -16,24 +16,31 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-
-    if (token && userData) {
-      setUser(JSON.parse(userData));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    }
-    setLoading(false);
+    const bootstrap = async () => {
+      try {
+        const csrfRes = await api.get('/auth/csrf');
+        if (csrfRes.data?.csrfToken) {
+          sessionStorage.setItem('csrfToken', csrfRes.data.csrfToken);
+        }
+        const meRes = await api.get('/auth/me');
+        if (meRes.data?.user) {
+          setUser(meRes.data.user);
+        }
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    bootstrap();
   }, []);
 
   const login = async (email, password) => {
     try {
-      const response = await axios.post('/api/auth/login', { email, password });
-      const { token, user } = response.data;
+      const response = await api.post('/auth/login', { email, password });
+      const { user, csrfToken } = response.data;
 
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      if (csrfToken) sessionStorage.setItem('csrfToken', csrfToken);
       setUser(user);
 
       return { success: true };
@@ -47,12 +54,10 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      const response = await axios.post('/api/auth/register', userData);
-      const { token, user } = response.data;
+      const response = await api.post('/auth/register', userData);
+      const { user, csrfToken } = response.data;
 
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      if (csrfToken) sessionStorage.setItem('csrfToken', csrfToken);
       setUser(user);
 
       return { success: true };
@@ -65,10 +70,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    delete axios.defaults.headers.common['Authorization'];
+    sessionStorage.removeItem('csrfToken');
+    api.post('/auth/logout').catch(() => {});
     setUser(null);
+  };
+
+  const updateUser = (nextUser) => {
+    setUser(nextUser);
+  };
+
+  const refreshUser = async () => {
+    const meRes = await api.get('/auth/me');
+    if (meRes.data?.user) setUser(meRes.data.user);
+    return meRes.data?.user;
   };
 
   const value = {
@@ -76,7 +90,9 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
-    loading
+    loading,
+    updateUser,
+    refreshUser
   };
 
   return (

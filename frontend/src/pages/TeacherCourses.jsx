@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Button from '../components/ui/Button';
 import Spinner from '../components/Spinner';
 import api from '../lib/api';
+import { useToast } from '../contexts/ToastContext';
 
 export default function TeacherCourses() {
   const [courses, setCourses] = useState([]);
@@ -12,6 +13,7 @@ export default function TeacherCourses() {
   const [activities, setActivities] = useState([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', due_at: '' });
+  const { addToast } = useToast();
 
   const fetchCourses = async (page = 1, query = '') => {
     setLoading(true);
@@ -49,8 +51,8 @@ export default function TeacherCourses() {
   };
 
   const submitActivity = async () => {
-    if (!selectedCourse) { alert('Selecciona un curso'); return; }
-    if (!form.title) { alert('Título requerido'); return; }
+    if (!selectedCourse) { addToast('Selecciona un curso', { type: 'error' }); return; }
+    if (!form.title) { addToast('Título requerido', { type: 'error' }); return; }
     setSaving(true);
     try {
       await api.post('/teacher/activities', {
@@ -70,63 +72,75 @@ export default function TeacherCourses() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Mis cursos</h2>
-      <div className="mb-3 flex items-center gap-2">
-        <input aria-label="Buscar cursos" className="border p-2 flex-1" placeholder="Buscar título o descripción" value={q} onChange={e=>setQ(e.target.value)} />
-        <Button onClick={()=>fetchCourses(meta.page || 1, q)}>Refrescar</Button>
-      </div>
-      {loading ? <Spinner /> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {courses.map(c => (
-            <div key={c.id} className={`border rounded p-3 ${selectedCourse?.id === c.id ? 'border-blue-500' : ''}`}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-semibold">{c.title}</div>
-                  <div className="text-sm text-gray-600">{c.description || 'Sin descripción'}</div>
-                  <div className="text-xs text-gray-500">Instructor: {c.instructor_name || 'Yo'}</div>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Mis cursos</h2>
+            <p className="section-subtitle">Gestiona cursos y crea actividades rápidamente.</p>
+          </div>
+          <span className="pill">Profesor</span>
+        </div>
+
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <input aria-label="Buscar cursos" className="input" placeholder="Buscar título o descripción" value={q} onChange={e=>setQ(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+          <Button onClick={()=>fetchCourses(meta.page || 1, q)}>Refrescar</Button>
+        </div>
+
+        {loading ? <div style={{ marginTop: 16 }}><Spinner /></div> : (
+          <div className="cards-grid" style={{ marginTop: 16 }}>
+            {courses.map(c => (
+              <div key={c.id} className="card" style={{ padding: 16, border: selectedCourse?.id === c.id ? '1px solid var(--primary)' : '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{c.title}</div>
+                    <div className="muted" style={{ marginTop: 6 }}>{c.description || 'Sin descripción'}</div>
+                    <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Instructor: {c.instructor_name || 'Yo'}</div>
+                  </div>
+                  <Button variant="secondary" onClick={()=>handleSelectCourse(c)} className="text-sm">Ver</Button>
                 </div>
-                <Button onClick={()=>handleSelectCourse(c)} className="text-sm">Ver</Button>
+              </div>
+            ))}
+            {courses.length === 0 && <div className="muted">Sin cursos asignados.</div>}
+          </div>
+        )}
+
+        {selectedCourse && (
+          <div style={{ marginTop: 28 }}>
+            <h3 className="section-title" style={{ fontSize: 18 }}>Actividades para {selectedCourse.title}</h3>
+            <div className="cards-grid" style={{ marginTop: 16 }}>
+              <div className="card" style={{ padding: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>Crear actividad rápida</div>
+                <label className="label">Título
+                  <input className="input" value={form.title} onChange={e=>setForm({...form, title: e.target.value})} />
+                </label>
+                <label className="label" style={{ marginTop: 10 }}>Descripción
+                  <textarea className="input" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
+                </label>
+                <label className="label" style={{ marginTop: 10 }}>Fecha límite
+                  <input type="datetime-local" className="input" value={form.due_at} onChange={e=>setForm({...form, due_at: e.target.value})} />
+                </label>
+                <div style={{ marginTop: 12 }}>
+                  <Button onClick={submitActivity} disabled={saving} icon="✔">{saving ? 'Guardando...' : 'Crear actividad'}</Button>
+                </div>
+              </div>
+              <div className="card" style={{ padding: 16 }}>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>Actividades</div>
+                {activities.length === 0 && <div className="muted">Sin actividades aún.</div>}
+                <ul style={{ display: 'grid', gap: 8 }}>
+                  {activities.map(a => (
+                    <li key={a.id} className="card" style={{ padding: 12, border: '1px solid var(--border)' }}>
+                      <div style={{ fontWeight: 600 }}>{a.title}</div>
+                      <div className="muted" style={{ marginTop: 4 }}>{a.description || 'Sin descripción'}</div>
+                      <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Vence: {a.due_at ? new Date(a.due_at).toLocaleString() : 'No definida'}</div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
-          ))}
-          {courses.length === 0 && <div className="text-sm text-gray-600">Sin cursos asignados.</div>}
-        </div>
-      )}
-
-      {selectedCourse && (
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-2">Actividades para {selectedCourse.title}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded p-3">
-              <div className="font-semibold mb-2">Crear actividad rápida</div>
-              <label className="flex flex-col mb-2 text-sm">Título
-                <input className="border p-2" value={form.title} onChange={e=>setForm({...form, title: e.target.value})} />
-              </label>
-              <label className="flex flex-col mb-2 text-sm">Descripción
-                <textarea className="border p-2" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
-              </label>
-              <label className="flex flex-col mb-3 text-sm">Fecha límite
-                <input type="datetime-local" className="border p-2" value={form.due_at} onChange={e=>setForm({...form, due_at: e.target.value})} />
-              </label>
-              <Button onClick={submitActivity} className="bg-blue-600 text-white" disabled={saving}>{saving ? 'Guardando...' : 'Crear actividad'}</Button>
-            </div>
-            <div className="border rounded p-3">
-              <div className="font-semibold mb-2">Actividades</div>
-              {activities.length === 0 && <div className="text-sm text-gray-600">Sin actividades aún.</div>}
-              <ul className="space-y-2">
-                {activities.map(a => (
-                  <li key={a.id} className="border rounded p-2">
-                    <div className="font-semibold">{a.title}</div>
-                    <div className="text-sm text-gray-700">{a.description || 'Sin descripción'}</div>
-                    <div className="text-xs text-gray-500">Vence: {a.due_at ? new Date(a.due_at).toLocaleString() : 'No definida'}</div>
-                  </li>
-                ))}
-              </ul>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

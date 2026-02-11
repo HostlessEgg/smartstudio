@@ -45,25 +45,34 @@ export default function RepresentativeSettings(){
   const showWeeklyDigest = isFlagEnabled(flags, 'weekly_digest');
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Ajustes de Representante</h2>
-      <div className="p-3 border rounded">
-        <label className="flex items-center gap-2 mb-3">
-          <input aria-label="Notificaciones por email" type="checkbox" checked={emailNotifications} onChange={e=>setEmailNotifications(e.target.checked)} />
-          <span>Notificaciones por email</span>
-        </label>
-        {showWeeklyDigest && (
-          <label className="flex items-center gap-2 mb-3">
-            <input aria-label="Resumen semanal" type="checkbox" checked={weeklyDigest} onChange={e=>setWeeklyDigest(e.target.checked)} />
-            <span>Recibir resumen semanal</span>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Ajustes de representante</h2>
+            <p className="section-subtitle">Configura cómo quieres recibir notificaciones.</p>
+          </div>
+          <span className="pill">Representante</span>
+        </div>
+
+        <div className="card" style={{ marginTop: 16, padding: 16, border: '1px solid var(--border)', boxShadow: 'none' }}>
+          <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <input aria-label="Notificaciones por email" type="checkbox" checked={emailNotifications} onChange={e=>setEmailNotifications(e.target.checked)} />
+            Notificaciones por email
           </label>
-        )}
-        <label className="flex items-center gap-2 mb-3">
-          <input aria-label="Notificaciones in-app" type="checkbox" checked={inAppNotifications} onChange={e=>setInAppNotifications(e.target.checked)} />
-          <span>Notificaciones en la app</span>
-        </label>
-        <div>
-          <Button className="bg-blue-600 text-white" onClick={save} ariaLabel="Guardar preferencias">{loading ? 'Guardando...' : 'Guardar preferencias'}</Button>
+          {showWeeklyDigest && (
+            <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <input aria-label="Resumen semanal" type="checkbox" checked={weeklyDigest} onChange={e=>setWeeklyDigest(e.target.checked)} />
+              Recibir resumen semanal
+            </label>
+          )}
+          <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <input aria-label="Notificaciones in-app" type="checkbox" checked={inAppNotifications} onChange={e=>setInAppNotifications(e.target.checked)} />
+            Notificaciones en la app
+          </label>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <Button onClick={save} ariaLabel="Guardar preferencias" disabled={loading}>{loading ? 'Guardando...' : 'Guardar preferencias'}</Button>
+          </div>
         </div>
       </div>
     </div>

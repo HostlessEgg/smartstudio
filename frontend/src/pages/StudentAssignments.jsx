@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Button from '../components/ui/Button';
 import Spinner from '../components/Spinner';
 import api from '../lib/api';
+import { useToast } from '../contexts/ToastContext';
 
 export default function StudentAssignments() {
   const [assignments, setAssignments] = useState([]);
@@ -11,6 +12,7 @@ export default function StudentAssignments() {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({ text_submission: '', file_url: '' });
   const [submitting, setSubmitting] = useState(false);
+  const { addToast } = useToast();
 
   const loadAssignments = async () => {
     setLoading(true);
@@ -43,7 +45,7 @@ export default function StudentAssignments() {
   useEffect(() => { const t = setTimeout(loadAssignments, 250); return () => clearTimeout(t); }, [statusFilter, q]);
 
   const submit = async () => {
-    if (!selected) { alert('Selecciona una tarea'); return; }
+    if (!selected) { addToast('Selecciona una tarea', { type: 'error' }); return; }
     setSubmitting(true);
     try {
       await api.post(`/assignments/${selected.id}/submissions`, {
@@ -61,58 +63,68 @@ export default function StudentAssignments() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Mis tareas</h2>
-      <div className="flex flex-wrap gap-2 mb-3 items-center">
-        <input className="border p-2 flex-1" placeholder="Buscar por título o materia" value={q} onChange={e=>setQ(e.target.value)} />
-        <select className="border p-2" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-          <option value="all">Todas</option>
-          <option value="pending">Pendientes</option>
-          <option value="submitted">Entregadas</option>
-        </select>
-        <Button onClick={loadAssignments}>Refrescar</Button>
-      </div>
-      {loading ? <Spinner /> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {assignments.map(a => (
-            <div key={a.id} className={`border rounded p-3 ${selected?.id === a.id ? 'border-blue-600' : ''}`}>
-              <div className="font-semibold flex justify-between items-start">
-                <span>{a.title}</span>
-                <span className="text-xs px-2 py-1 rounded bg-gray-100">{a.status === 'submitted' ? 'Entregada' : 'Pendiente'}</span>
-              </div>
-              <div className="text-sm text-gray-700">{a.description || 'Sin descripción'}</div>
-              <div className="text-xs text-gray-500 mt-1">Materia: {a.subject_name || 'N/D'} · Grado: {a.grade_name || 'N/D'}</div>
-              <div className="text-xs text-gray-500">Inicio: {a.start_at ? new Date(a.start_at).toLocaleString() : '—'}</div>
-              <div className="text-xs text-gray-500">Entrega: {a.end_at ? new Date(a.end_at).toLocaleString() : '—'}</div>
-              {a.submission_id && (
-                <div className="text-xs text-green-700 mt-1">Enviada el {a.submitted_at ? new Date(a.submitted_at).toLocaleString() : ''}{a.score ? ` · Nota: ${a.score}` : ''}</div>
-              )}
-              <div className="mt-2 flex justify-end">
-                <Button className="text-sm" onClick={()=>setSelected(a)}>Seleccionar</Button>
-              </div>
-            </div>
-          ))}
-          {assignments.length === 0 && <div className="text-sm text-gray-600">No hay tareas con este filtro.</div>}
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Mis tareas</h2>
+            <p className="section-subtitle">Filtra y entrega tus actividades.</p>
+          </div>
+          <span className="pill">Estudiante</span>
         </div>
-      )}
 
-      {selected && (
-        <div className="mt-6 border rounded p-4">
-          <h3 className="text-lg font-semibold mb-2">Entregar: {selected.title}</h3>
-          <div className="grid gap-3">
-            <label className="flex flex-col text-sm">Texto / notas
-              <textarea className="border p-2" value={form.text_submission} onChange={e=>setForm({...form, text_submission: e.target.value})} />
-            </label>
-            <label className="flex flex-col text-sm">URL de archivo (opcional)
-              <input className="border p-2" placeholder="https://..." value={form.file_url} onChange={e=>setForm({...form, file_url: e.target.value})} />
-            </label>
-            <div className="flex gap-2 items-center">
-              <Button className="bg-blue-600 text-white" onClick={submit} disabled={submitting}>{submitting ? 'Enviando...' : 'Enviar entrega'}</Button>
-              {selected.submission_id && <span className="text-xs text-gray-600">Ya enviaste una entrega. Puedes reenviar para actualizar.</span>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginTop: 16 }}>
+          <input className="input" placeholder="Buscar por título o materia" value={q} onChange={e=>setQ(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+          <select className="input" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ minWidth: 180 }}>
+            <option value="all">Todas</option>
+            <option value="pending">Pendientes</option>
+            <option value="submitted">Entregadas</option>
+          </select>
+          <Button onClick={loadAssignments}>Refrescar</Button>
+        </div>
+
+        {loading ? <div style={{ marginTop: 16 }}><Spinner /></div> : (
+          <div className="cards-grid" style={{ marginTop: 16 }}>
+            {assignments.map(a => (
+              <div key={a.id} className="card" style={{ padding: 16, border: selected?.id === a.id ? '1px solid var(--primary)' : '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <span style={{ fontWeight: 600 }}>{a.title}</span>
+                  <span className={`badge ${a.status === 'submitted' ? 'badge-success' : 'badge-warning'}`}>{a.status === 'submitted' ? 'Entregada' : 'Pendiente'}</span>
+                </div>
+                <div className="muted" style={{ marginTop: 8 }}>{a.description || 'Sin descripción'}</div>
+                <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Materia: {a.subject_name || 'N/D'} · Grado: {a.grade_name || 'N/D'}</div>
+                <div className="muted" style={{ fontSize: 12 }}>Inicio: {a.start_at ? new Date(a.start_at).toLocaleString() : '—'}</div>
+                <div className="muted" style={{ fontSize: 12 }}>Entrega: {a.end_at ? new Date(a.end_at).toLocaleString() : '—'}</div>
+                {a.submission_id && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--success)' }}>Enviada el {a.submitted_at ? new Date(a.submitted_at).toLocaleString() : ''}{a.score ? ` · Nota: ${a.score}` : ''}</div>
+                )}
+                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button variant="secondary" onClick={()=>setSelected(a)} className="text-sm">Seleccionar</Button>
+                </div>
+              </div>
+            ))}
+            {assignments.length === 0 && <div className="muted">No hay tareas con este filtro.</div>}
+          </div>
+        )}
+
+        {selected && (
+          <div className="card" style={{ marginTop: 20, padding: 16 }}>
+            <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Entregar: {selected.title}</h3>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <label className="label">Texto / notas
+                <textarea className="input" value={form.text_submission} onChange={e=>setForm({...form, text_submission: e.target.value})} />
+              </label>
+              <label className="label">URL de archivo (opcional)
+                <input className="input" placeholder="https://..." value={form.file_url} onChange={e=>setForm({...form, file_url: e.target.value})} />
+              </label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Button onClick={submit} disabled={submitting} icon="✔">{submitting ? 'Enviando...' : 'Enviar entrega'}</Button>
+                {selected.submission_id && <span className="muted" style={{ fontSize: 12 }}>Ya enviaste una entrega. Puedes reenviar para actualizar.</span>}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

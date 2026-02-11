@@ -20,23 +20,23 @@ export default function CertificateView({ search }){
   const print = () => window.print();
 
   return (
-    <div className="container mx-auto p-6 max-w-2xl border rounded bg-white">
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold">Certificado de Finalización</h1>
-        <p className="text-sm text-gray-600">SmartStudio</p>
-      </div>
+    <div className="page">
+      <div className="card" style={{ padding: 32, maxWidth: 720, margin: '0 auto' }}>
+        <div style={{ textAlign: 'center' }}>
+          <h1 className="section-title">Certificado de finalización</h1>
+          <p className="section-subtitle">SmartStudio</p>
+        </div>
 
-      <div className="mb-6 text-center">
-        <p>Otorgado a</p>
-        <div className="text-xl font-semibold">{student}</div>
-        <p className="mt-3">Por completar el curso</p>
-        <div className="font-medium">{course ? course.title : 'Curso Demo'}</div>
-      </div>
+        <div style={{ marginTop: 24, textAlign: 'center' }}>
+          <div className="muted">Otorgado a</div>
+          <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6 }}>{student}</div>
+          <div className="muted" style={{ marginTop: 12 }}>Por completar el curso</div>
+          <div style={{ fontWeight: 600, marginTop: 6 }}>{course ? course.title : 'Curso Demo'}</div>
+        </div>
 
-      <div className="flex justify-between items-center mt-8">
-        <div className="text-sm text-gray-600">Fecha: {new Date().toLocaleDateString()}</div>
-        <div>
-          <Button className="bg-blue-600 text-white" onClick={print}>Imprimir / Descargar</Button>
+        <div style={{ marginTop: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div className="muted">Fecha: {new Date().toLocaleDateString()}</div>
+          <Button onClick={print}>Imprimir / Descargar</Button>
         </div>
       </div>
     </div>

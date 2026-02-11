@@ -4,12 +4,15 @@ import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import EmptyState from '../components/EmptyState';
 import AdminTasks from './AdminTasks';
+import Button from '../components/ui/Button';
+import { useNavigate } from 'react-router-dom';
 
 export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState({ status: 'unknown', message: '', checkedAt: null });
   const { addToast } = useToast();
+  const navigate = useNavigate();
 
   const fetchSummary = async () => {
     setLoading(true);
@@ -44,27 +47,27 @@ export default function AdminDashboard() {
             <p className="section-subtitle">Resumen del sistema y accesos clave.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={fetchSummary} className="btn-primary">{loading ? 'Cargando...' : 'Actualizar'}</button>
-            <a href="/admin/users" className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center' }}>Administrar Usuarios</a>
+            <Button onClick={fetchSummary}>{loading ? 'Cargando...' : 'Actualizar'}</Button>
+            <Button variant="secondary" onClick={() => navigate('/admin/users')}>Usuarios</Button>
           </div>
         </div>
 
         {loading ? (
           <div style={{ marginTop: 16 }}><Spinner message="Cargando resumen..." /></div>
         ) : summary ? (
-          <div className="grid-3" style={{ marginTop: 16 }}>
-            <Card title="Usuarios" value={summary?.db?.users ?? '—'} />
-            <Card title="Cursos" value={summary?.db?.courses ?? '—'} />
-            <Card title="Entregas" value={summary?.db?.submissions ?? '—'} />
-            <Card title="Migraciones" value={summary?.db?.migrations ?? '—'} />
+          <div className="cards-grid" style={{ marginTop: 16 }}>
+            <Card title="Usuarios" value={summary?.db?.users ?? '—'} icon="ri-user-3-line" />
+            <Card title="Cursos" value={summary?.db?.courses ?? '—'} icon="ri-book-2-line" />
+            <Card title="Entregas" value={summary?.db?.submissions ?? '—'} icon="ri-inbox-archive-line" />
+            <Card title="Migraciones" value={summary?.db?.migrations ?? '—'} icon="ri-git-merge-line" />
           </div>
         ) : (
           <div style={{ marginTop: 16 }}><EmptyState title="Sin datos" description="No se encontró información del sistema." /></div>
         )}
 
         <div style={{ marginTop: 16 }}>
-          <h3 style={{ fontWeight: 600 }}>Health</h3>
-          <div className="card-muted" style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)', display: 'grid', gap: 8 }}>
+          <h3 style={{ fontWeight: 600 }}>Estado del sistema</h3>
+          <div className="card" style={{ marginTop: 8, padding: 16, display: 'grid', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <StatusPill status={health.status} />
               <span className="muted">{health.message || '—'}</span>
@@ -78,27 +81,36 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="grid-3" style={{ marginTop: 16 }}>
-          <Card title="Foro (threads)" value={summary?.db?.forum_threads ?? '—'} />
-          <Card title="Foro (hilos)" value={summary?.db?.forum_threads ?? '—'} />
-          <Card title="Entregas de quiz" value={summary?.db?.quiz_submissions ?? '—'} />
-          <Card title="Tareas" value={summary?.db?.assignments ?? '—'} />
+        <div className="cards-grid" style={{ marginTop: 16 }}>
+          <Card title="Foro (hilos)" value={summary?.db?.forum_threads ?? '—'} icon="ri-message-2-line" />
+          <Card title="Entregas de quiz" value={summary?.db?.quiz_submissions ?? '—'} icon="ri-questionnaire-line" />
+          <Card title="Tareas" value={summary?.db?.assignments ?? '—'} icon="ri-todo-line" />
         </div>
 
         <div style={{ marginTop: 16 }}>
           <h3 style={{ fontWeight: 600 }}>Tareas recientes</h3>
-          <div className="card-muted" style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)' }}>
+          <div className="table-container" style={{ marginTop: 8 }}>
             {summary?.recent_assignments && summary.recent_assignments.length > 0 ? (
-              <ul style={{ display: 'grid', gap: 8 }}>
-                {summary.recent_assignments.map(a => (
-                  <li key={a.id} style={{ paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontWeight: 600 }}>{a.title}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{a.start_at ? new Date(a.start_at).toLocaleString() : ''} — {a.end_at ? new Date(a.end_at).toLocaleString() : ''}</div>
-                  </li>
-                ))}
-              </ul>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Tarea</th>
+                    <th>Inicio</th>
+                    <th>Entrega</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.recent_assignments.map(a => (
+                    <tr key={a.id}>
+                      <td style={{ fontWeight: 600 }}>{a.title}</td>
+                      <td className="muted">{a.start_at ? new Date(a.start_at).toLocaleString() : '—'}</td>
+                      <td className="muted">{a.end_at ? new Date(a.end_at).toLocaleString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
-              <div className="muted">Sin tareas recientes</div>
+              <div className="muted" style={{ padding: 12 }}>Sin tareas recientes</div>
             )}
           </div>
         </div>
@@ -116,11 +128,14 @@ export default function AdminDashboard() {
   );
 }
 
-function Card({ title, value }) {
+function Card({ title, value, icon }) {
   return (
-    <div className="card" style={{ padding: 14 }}>
-      <div className="muted" style={{ fontSize: 12 }}>{title}</div>
-      <div style={{ fontSize: 24, fontWeight: 600, marginTop: 4 }}>{value}</div>
+    <div className="card" style={{ padding: 16 }}>
+      <div className="card-header">
+        <div className="card-title" style={{ fontSize: 16 }}>{title}</div>
+        <div className="card-icon"><i className={icon || 'ri-bar-chart-2-line'} aria-hidden="true"></i></div>
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 600 }}>{value}</div>
     </div>
   );
 }

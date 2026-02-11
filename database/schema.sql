@@ -149,6 +149,80 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Configuración del sistema
+CREATE TABLE IF NOT EXISTS system_settings (
+    id INT PRIMARY KEY,
+    institution_name VARCHAR(255) DEFAULT NULL,
+    school_year VARCHAR(32) DEFAULT NULL,
+    period_name VARCHAR(64) DEFAULT NULL,
+    period_start DATE DEFAULT NULL,
+    period_end DATE DEFAULT NULL,
+    notifications_enabled BOOLEAN DEFAULT TRUE,
+    allow_teacher_registration BOOLEAN DEFAULT TRUE,
+    maintenance_mode BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Tabla de materias
+CREATE TABLE IF NOT EXISTS subjects (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    code VARCHAR(64) DEFAULT NULL,
+    name VARCHAR(255) NOT NULL,
+    grade VARCHAR(64) DEFAULT NULL,
+    hours INT DEFAULT NULL,
+    sections VARCHAR(128) DEFAULT NULL,
+    active BOOLEAN DEFAULT TRUE,
+    teachers JSON DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY ux_subjects_code (code)
+);
+
+-- Tabla de mensajes internos
+CREATE TABLE IF NOT EXISTS messages (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    sender_id INT NOT NULL,
+    recipient_id INT NOT NULL,
+    subject VARCHAR(255) DEFAULT NULL,
+    body TEXT NOT NULL,
+    read_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Tabla de anuncios
+CREATE TABLE IF NOT EXISTS announcements (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    priority ENUM('low','normal','high') DEFAULT 'normal',
+    active BOOLEAN DEFAULT TRUE,
+    created_by INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Tabla de recursos
+CREATE TABLE IF NOT EXISTS resources (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(255) NOT NULL,
+    file_type VARCHAR(32) DEFAULT NULL,
+    file_size VARCHAR(32) DEFAULT NULL,
+    url VARCHAR(500) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de libros
+CREATE TABLE IF NOT EXISTS library_books (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(255) NOT NULL,
+    author VARCHAR(255) DEFAULT NULL,
+    status ENUM('Disponible','Reservado','Prestado') DEFAULT 'Disponible',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Insertar datos de ejemplo
 INSERT IGNORE INTO users (id, name, email, password, role) VALUES 
 (1, 'Admin SmartStudio', 'admin@smartstudio.com', '$2b$10$ExampleHash', 'admin'),

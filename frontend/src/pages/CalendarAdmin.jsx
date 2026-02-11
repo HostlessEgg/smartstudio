@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import eventsSeed from '../../mock-data/calendar_events.json';
 import Modal from '../components/ui/Modal';
 import { useToast } from '../contexts/ToastContext';
+import Button from '../components/ui/Button';
 
 export default function CalendarAdmin(){
   const [events, setEvents] = useState(eventsSeed || []);
@@ -32,7 +33,7 @@ export default function CalendarAdmin(){
             <h2 className="section-title">Administración de Calendario</h2>
             <p className="section-subtitle">Eventos generales y fechas clave.</p>
           </div>
-          <button onClick={openAdd} className="btn-primary">Agregar Evento</button>
+          <Button onClick={openAdd}>Agregar evento</Button>
         </div>
         <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
           {events.map(ev => (
@@ -53,8 +54,8 @@ export default function CalendarAdmin(){
             <input className="input" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} placeholder="2026-02-10" />
           </label>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button className="btn-primary" onClick={addEvent}>Crear</button>
-            <button className="btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>
+            <Button onClick={addEvent}>Crear</Button>
+            <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
           </div>
         </div>
       </Modal>

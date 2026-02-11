@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import Button from './ui/Button';
 
 export default function AssignTeachersModal({ open, subject, onClose, onSave }) {
   const [teachers, setTeachers] = useState([]);
@@ -35,24 +36,24 @@ export default function AssignTeachersModal({ open, subject, onClose, onSave }) 
         <div className="progress-modal-body">
           <p>Materia: <strong>{subject?.name}</strong></p>
           <div className="mt-2">
-            <label className="text-sm">Añadir profesor</label>
+            <label className="label">Añadir profesor</label>
             <div className="flex gap-2 mt-1">
-              <input ref={inputRef} placeholder="Nombre del profesor" className="p-2 border flex-1" />
-              <button onClick={() => addTeacher(inputRef.current?.value)} className="btn btn-secondary">Añadir</button>
+              <input ref={inputRef} placeholder="Nombre del profesor" className="input" />
+              <Button variant="secondary" onClick={() => addTeacher(inputRef.current?.value)}>Añadir</Button>
             </div>
           </div>
           <ul className="mt-3">
             {teachers.map((t, i) => (
               <li key={i} className="flex justify-between items-center p-1 border-b">
                 <span>{t}</span>
-                <button onClick={() => removeTeacher(i)} className="btn btn-danger">Eliminar</button>
+                <Button variant="danger" onClick={() => removeTeacher(i)}>Eliminar</Button>
               </li>
             ))}
-            {teachers.length === 0 && <li className="text-sm text-gray-600">No hay profesores asignados.</li>}
+            {teachers.length === 0 && <li className="muted" style={{ fontSize: 12 }}>No hay profesores asignados.</li>}
           </ul>
           <div className="mt-4 flex gap-2">
-            <button onClick={save} className="btn btn-primary">Guardar</button>
-            <button onClick={onClose} className="btn">Cancelar</button>
+            <Button onClick={save}>Guardar</Button>
+            <Button variant="ghost" onClick={onClose}>Cancelar</Button>
           </div>
         </div>
       </div>

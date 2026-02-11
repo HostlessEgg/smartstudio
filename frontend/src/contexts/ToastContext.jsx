@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useCallback } from 'react';
+import api from '../lib/api';
 
 const ToastContext = createContext(null);
 
@@ -30,7 +31,7 @@ export const ToastProvider = ({ children }) => {
       if (!last) return false;
       const obj = JSON.parse(last);
       if (obj.type === 'bulk_deactivate') {
-        await fetch('/api/users/bulk-reactivate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }, body: JSON.stringify({ ids: obj.ids }) });
+        await api.post('/users/bulk-reactivate', { ids: obj.ids });
         sessionStorage.removeItem('last_bulk_action');
         return true;
       }
@@ -64,7 +65,7 @@ export const ToastProvider = ({ children }) => {
         if (!last) return;
         const obj = JSON.parse(last);
         if (obj.type === 'bulk_deactivate') {
-          await fetch('/api/users/bulk-reactivate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }, body: JSON.stringify({ ids: obj.ids }) });
+          await api.post('/users/bulk-reactivate', { ids: obj.ids });
           sessionStorage.removeItem('last_bulk_action');
           addToast('Acción revertida', { type: 'success' });
         }

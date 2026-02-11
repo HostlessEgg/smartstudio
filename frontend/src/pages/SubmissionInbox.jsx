@@ -106,13 +106,13 @@ export default function SubmissionInbox(){
         ) : assignments.length === 0 ? (
           <div style={{ marginTop: 16 }}><EmptyState title="Sin actividades" description="Aún no tienes actividades asignadas." /></div>
         ) : (
-          <div className="card-muted" style={{ marginTop: 12, padding: 12, border: '1px solid var(--border)' }}>
+          <div className="card" style={{ marginTop: 12, padding: 12 }}>
             <div className="muted" style={{ fontSize: 12 }}>Actividad seleccionada: <strong>{selectedAssignment?.title}</strong></div>
             <div className="muted" style={{ fontSize: 12 }}>Entregas: {subs.length}</div>
           </div>
         )}
 
-        <div className="table-responsive" style={{ marginTop: 16 }}>
+        <div className="table-container" style={{ marginTop: 16 }}>
           <table className="table">
             <thead>
               <tr>
@@ -131,11 +131,11 @@ export default function SubmissionInbox(){
                   <td style={{ fontWeight: 600 }}>{s.title}</td>
                   <td className="muted">{new Date(s.submitted_at).toLocaleString()}</td>
                   <td>
-                    <span className="pill">{s.status}</span>
+                    <span className={`badge ${s.status === 'graded' ? 'badge-success' : 'badge-warning'}`}>{s.status === 'graded' ? 'Calificada' : 'Pendiente'}</span>
                   </td>
                   <td>{s.score ?? '—'}</td>
                   <td>
-                    <Button variant="ghost" onClick={()=>openReview(s)} ariaLabel={`Revisar entrega ${s.id}`}>Revisar</Button>
+                    <Button variant="secondary" onClick={()=>openReview(s)} ariaLabel={`Revisar entrega ${s.id}`}>Revisar</Button>
                   </td>
                 </tr>
               ))}

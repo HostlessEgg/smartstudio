@@ -57,6 +57,27 @@ Este documento recoge los requisitos funcionales prioritarios del proyecto LMS, 
 - Instructor puede revisar entregas, aplicar rúbrica y calificar manualmente.
 - Registrar calificaciones en el perfil del estudiante.
 
+## 6. Notificaciones y feature flags
+- Preferencias de notificaciones por usuario (email, resumen semanal, in-app).
+- Feature flags por entorno con porcentaje de rollout.
+
+**Criterios de aceptación**
+- El usuario puede actualizar sus preferencias de notificaciones.
+- Los flags se evalúan por entorno y aplican porcentajes de rollout.
+
+## 7. Seguridad de sesión
+- Las sesiones deben evitar almacenamiento inseguro de tokens en el cliente.
+- Priorizar cookies httpOnly y protección CSRF.
+
+**Criterios de aceptación**
+- El token no se expone en `localStorage`.
+- El login establece cookie segura y CSRF token cuando aplica.
+
+## Variables estándar (backend)
+- Archivo base: `backend/.env.example` → `backend/.env`
+- Variables mínimas: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `JWT_SECRET`
+- Para auth con cookies: `CORS_ORIGIN` debe apuntar al frontend.
+
 ## Siguientes pasos sugeridos
 - Convertir cada requisito en historias de usuario con criterios técnicos y tareas de implementación.
 - Priorizar el backlog (MVP mínimo viable: gestión usuarios, cursos básicos, estructura de contenidos, inscripción simple, evaluaciones básicas).

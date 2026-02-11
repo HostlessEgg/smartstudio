@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchSubjects } from '../api/subjects';
+import Button from '../components/ui/Button';
 
 export default function StudentSubjects(){
   const { user } = useAuth();
@@ -22,29 +23,34 @@ export default function StudentSubjects(){
   }, [user]);
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Mis Materias (Estudiante)</h2>
-      {loading ? (
-        <div>Cargando materias...</div>
-      ) : (
-        <div className="grid gap-3">
-          {subjects.length === 0 ? (
-            <div className="text-sm text-gray-600">No estás inscrito en materias (o tu grado no está definido).</div>
-          ) : (
-            subjects.map(s => (
-              <div key={s.id} className="p-3 border rounded bg-white flex justify-between items-center">
-                <div>
-                  <div className="font-medium">{s.name} <span className="text-sm text-gray-500">({s.code})</span></div>
-                  <div className="text-sm text-gray-600">Secciones: {s.sections ?? '—'}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button className="btn btn-secondary">Ver materia</button>
-                </div>
-              </div>
-            ))
-          )}
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Mis materias</h2>
+            <p className="section-subtitle">Consulta tus materias y secciones asignadas.</p>
+          </div>
+          <span className="pill">Estudiante</span>
         </div>
-      )}
+
+        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+          {loading && <div className="muted">Cargando materias...</div>}
+          {!loading && subjects.length === 0 && (
+            <div className="muted">No estás inscrito en materias (o tu grado no está definido).</div>
+          )}
+          {!loading && subjects.map(s => (
+            <div key={s.id} className="card" style={{ padding: 16, border: '1px solid var(--border)', boxShadow: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{s.name} <span className="muted" style={{ fontSize: 12 }}>({s.code})</span></div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Secciones: {s.sections ?? '—'}</div>
+                </div>
+                <Button variant="secondary">Ver materia</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
-  )
+  );
 }

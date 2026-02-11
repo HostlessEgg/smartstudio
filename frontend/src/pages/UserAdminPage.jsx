@@ -226,15 +226,16 @@ export default function UserAdminPage() {
           <div className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>Seleccionados: {selected.length}</div>
         </div>
 
-        <div className="table-responsive" style={{ marginTop: 12 }}>
+        <div className="table-container" style={{ marginTop: 12 }}>
           <table className="table" role="table" aria-label="Tabla de administración de usuarios">
             <thead>
               <tr>
                 <th><input aria-label="Seleccionar todo" type="checkbox" onChange={e=>selectAllPage(e.target.checked)} checked={pageItems.every(i=>selected.includes(i.id)) && pageItems.length>0} /></th>
-                <th>ID</th>
+                <th>Usuario</th>
                 <th>Nombre</th>
                 <th>Email</th>
                 <th>Rol</th>
+                <th>Último acceso</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -242,10 +243,23 @@ export default function UserAdminPage() {
               {pageItems.map(u=> (
                 <tr key={u.id}>
                   <td><input aria-label={`Seleccionar usuario ${u.id}`} type="checkbox" checked={selected.includes(u.id)} onChange={()=>toggleSelect(u.id)} /></td>
-                  <td>{u.id}</td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="user-avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+                        {(u.name || u.email || 'U').slice(0, 1).toUpperCase()}
+                      </div>
+                      <span className="muted">{u.id}</span>
+                    </div>
+                  </td>
                   <td style={{ fontWeight: 600 }}>{u.name}</td>
                   <td>{u.email}</td>
-                  <td>{u.role}{u.active===false ? ' (inactivo)' : ''}</td>
+                  <td>
+                    <span className={`badge ${u.active === false ? 'badge-danger' : 'badge-success'}`}>{u.role}</span>
+                    {u.active===false ? <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>(inactivo)</span> : null}
+                  </td>
+                  <td className="muted">
+                    {u.updated_at ? new Date(u.updated_at).toLocaleString() : 'N/D'}
+                  </td>
                   <td>
                     <Button variant="ghost" className="mr-2 text-sm" onClick={()=>openEdit(u)} ariaLabel={`Editar usuario ${u.id}`}>Editar</Button>
                     <Button variant="ghost" className="mr-2 text-sm" onClick={()=>openReset(u)} ariaLabel={`Resetear contraseña ${u.id}`} icon="↻">Reset</Button>

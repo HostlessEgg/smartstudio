@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchSubjects } from '../api/subjects';
+import Button from '../components/ui/Button';
 
 export default function TeacherSubjects(){
   const { user } = useAuth();
@@ -22,30 +23,39 @@ export default function TeacherSubjects(){
   }, [user]);
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Mis Materias (Profesor)</h2>
-      {loading ? (
-        <div>Cargando materias...</div>
-      ) : (
-        <div className="grid gap-3">
-          {subjects.length === 0 ? (
-            <div className="text-sm text-gray-600">No tienes materias asignadas.</div>
-          ) : (
-            subjects.map(s => (
-              <div key={s.id} className="p-3 border rounded bg-white flex justify-between items-center">
-                <div>
-                  <div className="font-medium">{s.name} <span className="text-sm text-gray-500">({s.code})</span></div>
-                  <div className="text-sm text-gray-600">Secciones: {s.sections ?? '—'}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button className="btn btn-secondary">Ver detalle</button>
-                  <button className="btn btn-primary">Crear assignment</button>
-                </div>
-              </div>
-            ))
-          )}
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Mis Materias</h2>
+            <p className="section-subtitle">Materias asignadas y accesos rápidos.</p>
+          </div>
+          <span className="pill">Profesor</span>
         </div>
-      )}
+
+        {loading ? (
+          <div className="muted" style={{ marginTop: 16 }}>Cargando materias...</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+            {subjects.length === 0 ? (
+              <div className="muted">No tienes materias asignadas.</div>
+            ) : (
+              subjects.map(s => (
+                <div key={s.id} className="card" style={{ padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{s.name} <span className="pill" style={{ marginLeft: 8 }}>{s.code}</span></div>
+                    <div className="muted" style={{ marginTop: 6 }}>Secciones: {s.sections ?? '—'}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Button variant="ghost">Ver detalle</Button>
+                    <Button icon="＋">Crear tarea</Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

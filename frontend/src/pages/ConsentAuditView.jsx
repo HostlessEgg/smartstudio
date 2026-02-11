@@ -37,33 +37,48 @@ export default function ConsentAuditView(){
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Historial de Consentimientos / Accesos</h2>
-      <p className="mb-4 text-sm text-gray-600">Esta vista muestra accesos y cambios de consentimientos (mock data).</p>
-      <div className="mb-3 flex gap-2">
-        <input className="border p-2" placeholder="Buscar representante o estudiante" value={q} onChange={e=>setQ(e.target.value)} />
-        <input type="date" className="border p-2" value={from} onChange={e=>setFrom(e.target.value)} />
-        <input type="date" className="border p-2" value={to} onChange={e=>setTo(e.target.value)} />
-        <Button onClick={exportCsv} className="ml-auto">Exportar CSV</Button>
-      </div>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Historial de consentimientos</h2>
+            <p className="section-subtitle">Accesos y cambios de consentimientos registrados.</p>
+          </div>
+          <span className="pill">Admin</span>
+        </div>
 
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="text-left"><th className="p-2">ID</th><th className="p-2">Rep</th><th className="p-2">Estudiante</th><th className="p-2">Acción</th><th className="p-2">Fecha</th><th className="p-2">Nota</th></tr>
-        </thead>
-        <tbody>
-          {filtered.map(c => (
-            <tr key={c.id} className="border-t">
-              <td className="p-2">{c.id}</td>
-              <td className="p-2">{c.representative} <div className="text-sm text-gray-600">{c.representative_email}</div></td>
-              <td className="p-2">{c.student} <div className="text-sm text-gray-600">{c.student_email}</div></td>
-              <td className="p-2">{c.action}</td>
-              <td className="p-2">{new Date(c.timestamp || c.at).toLocaleString()}</td>
-              <td className="p-2">{c.note}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        <div style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input className="input" placeholder="Buscar representante o estudiante" value={q} onChange={e=>setQ(e.target.value)} style={{ maxWidth: 320 }} />
+          <input type="date" className="input" value={from} onChange={e=>setFrom(e.target.value)} style={{ maxWidth: 180 }} />
+          <input type="date" className="input" value={to} onChange={e=>setTo(e.target.value)} style={{ maxWidth: 180 }} />
+          <Button onClick={exportCsv}>Exportar CSV</Button>
+        </div>
+
+        <div className="table-container" style={{ marginTop: 16 }}>
+          <table className="table">
+            <thead>
+              <tr><th>ID</th><th>Representante</th><th>Estudiante</th><th>Acción</th><th>Fecha</th><th>Nota</th></tr>
+            </thead>
+            <tbody>
+              {filtered.map(c => (
+                <tr key={c.id}>
+                  <td>{c.id}</td>
+                  <td>{c.representative} <div className="muted" style={{ fontSize: 12 }}>{c.representative_email}</div></td>
+                  <td>{c.student} <div className="muted" style={{ fontSize: 12 }}>{c.student_email}</div></td>
+                  <td>{c.action}</td>
+                  <td>{new Date(c.timestamp || c.at).toLocaleString()}</td>
+                  <td>{c.note}</td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">No hay registros para mostrar.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

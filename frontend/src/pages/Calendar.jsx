@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from '../components/Toast';
 import FullCalendarWrapper from '../components/FullCalendarWrapper';
+import ConfirmModal from '../components/ConfirmModal';
+import Button from '../components/ui/Button';
 
 export default function CalendarPage() {
   const { user } = useAuth();
@@ -18,6 +20,8 @@ export default function CalendarPage() {
   const [toast, setToast] = useState({ message: '', type: 'info' });
   const [page, setPage] = useState(1);
   const pageSize = 8;
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
 
   const fetchEvents = async (from, to) => {
     setLoading(true);
@@ -30,7 +34,7 @@ export default function CalendarPage() {
       if (filters.subject) params.subjectId = filters.subject;
       if (filters.q) params.q = filters.q;
       const endpoint = user?.role === 'student' ? '/api/my/assignments' : '/api/assignments';
-      const res = await axios.get(endpoint, { params });
+      const res = await api.get(endpoint.replace('/api', ''), { params });
       const items = (res.data || []).map(a => ({
         id: a.id,
         title: a.title + (a.grade_name ? ` - ${a.grade_name}` : ''),
@@ -53,7 +57,7 @@ export default function CalendarPage() {
     // fetch curriculum (levels->grades->subjects) for selectors
     (async () => {
       try {
-        const res = await axios.get('/api/curriculum');
+        const res = await api.get('/curriculum');
         const data = res.data || {};
         // Expected normalized response: { levels: [ { id, name, grades: [ { id, name, subjects: [...] } ] } ] }
         if (Array.isArray(data.levels)) {
@@ -153,7 +157,7 @@ export default function CalendarPage() {
 
   const handleEventClick = (clickInfo) => {
     const ev = clickInfo.event.extendedProps;
-    alert(`Assignment:\n${ev.title}\n\n${ev.description || ''}`);
+    setToast({ message: `${ev.title}${ev.description ? ` — ${ev.description}` : ''}`, type: 'info' });
   };
 
   const handleCreate = async (e) => {
@@ -168,11 +172,11 @@ export default function CalendarPage() {
         subject_id: form.subject_id || null
       };
       if (editingId) {
-        await axios.put(`/api/assignments/${editingId}`, payload);
+        await api.put(`/assignments/${editingId}`, payload);
         setEditingId(null);
         setToast({ message: 'Asignación actualizada', type: 'success' });
       } else {
-        await axios.post('/api/assignments', payload);
+        await api.post('/assignments', payload);
         setToast({ message: 'Asignación creada', type: 'success' });
       }
       setShowForm(false);
@@ -180,7 +184,7 @@ export default function CalendarPage() {
       fetchEvents();
     } catch (err) {
       console.error('Error creating assignment', err);
-      setToast({ message: err.response?.data?.error || 'Error creando assignment', type: 'error' });
+      setToast({ message: err.response?.data?.error || 'Error creando asignación', type: 'error' });
     }
   };
 
@@ -197,54 +201,60 @@ export default function CalendarPage() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar esta asignación?')) return;
+  const handleDelete = (id) => {
+    setDeleteId(id);
+    setConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteId) return;
     try {
-      await axios.delete(`/api/assignments/${id}`);
+      await api.delete(`/assignments/${deleteId}`);
       setToast({ message: 'Asignación eliminada', type: 'success' });
       fetchEvents();
     } catch (err) {
       console.error('Error eliminando asignación', err);
       setToast({ message: 'Error eliminando asignación', type: 'error' });
+    } finally {
+      setDeleteId(null);
+      setConfirmOpen(false);
     }
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Calendario de Asignaciones</h2>
-        {user && (user.role === 'teacher' || user.role === 'admin') ? (
-          <button onClick={() => setShowForm(true)} className="bg-blue-600 text-white px-3 py-1 rounded">Crear asignación</button>
-        ) : (
-          <div className="text-sm text-gray-600">Si eres profesor, <a href="/login" className="text-blue-600">inicia sesión</a> para crear asignaciones.</div>
-        )}
-      </div>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Calendario de Asignaciones</h2>
+            <p className="section-subtitle">Organiza eventos y entregas.</p>
+          </div>
+          {user && (user.role === 'teacher' || user.role === 'admin') ? (
+            <Button onClick={() => setShowForm(true)}>Crear asignación</Button>
+          ) : (
+            <div className="muted" style={{ fontSize: 12 }}>Si eres profesor, <a href="/login">inicia sesión</a> para crear asignaciones.</div>
+          )}
+        </div>
 
-      <div className="mb-4 flex items-center gap-3">
-        <div>
-          <select value={filters.grade} onChange={e => setFilters({ ...filters, grade: e.target.value })} className="border p-2">
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <select value={filters.grade} onChange={e => setFilters({ ...filters, grade: e.target.value })} className="input" style={{ minWidth: 200 }}>
             <option value="">Todos los grados</option>
             {grades.map(g => <option key={g.id} value={g.id}>{g.name || g.label || `Grado ${g.id}`}</option>)}
           </select>
-        </div>
-        <div>
-          <select value={filters.subject} onChange={e => setFilters({ ...filters, subject: e.target.value })} className="border p-2">
+          <select value={filters.subject} onChange={e => setFilters({ ...filters, subject: e.target.value })} className="input" style={{ minWidth: 200 }}>
             <option value="">Todas las materias</option>
             {subjects.map(s => <option key={s.id} value={s.id}>{s.name || s.label || s.title || `Materia ${s.id}`}</option>)}
           </select>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <input placeholder="Buscar..." value={filters.q} onChange={e => setFilters({ ...filters, q: e.target.value })} className="input" />
+          </div>
+          <Button variant="ghost" onClick={() => { setFilters({ grade: '', subject: '', q: '' }); }}>Limpiar</Button>
         </div>
-        <div className="flex-1">
-          <input placeholder="Buscar..." value={filters.q} onChange={e => setFilters({ ...filters, q: e.target.value })} className="border p-2 w-full" />
-        </div>
-        <div>
-          <button onClick={() => { setFilters({ grade: '', subject: '', q: '' }); }} className="px-3 py-1 border rounded">Limpiar</button>
-        </div>
-      </div>
 
-      <div>
-        <p className="mb-2 text-sm text-gray-600">Lista de asignaciones:</p>
+        <div style={{ marginTop: 16 }}>
+          <p className="muted" style={{ marginBottom: 8, fontSize: 12 }}>Lista de asignaciones:</p>
         {supportsFullCalendar ? (
-          <div className="border rounded">
+          <div className="table-container">
             <FullCalendarWrapper
               events={events}
               onDateSelect={(info) => {
@@ -260,7 +270,7 @@ export default function CalendarPage() {
             />
           </div>
         ) : (
-          <ul className="space-y-2">
+          <ul style={{ display: 'grid', gap: 8 }}>
             {events
               .filter(ev => {
                 if (filters.grade && String(ev.extendedProps?.grade_id) !== String(filters.grade)) return false;
@@ -273,18 +283,18 @@ export default function CalendarPage() {
               })
               .slice((page - 1) * pageSize, page * pageSize)
               .map(ev => (
-                <li key={ev.id} className="p-2 border rounded flex items-start justify-between">
+                <li key={ev.id} className="card" style={{ padding: 12, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <div>
-                    <div className="font-semibold">{ev.title}</div>
-                    <div className="text-sm text-gray-600">{new Date(ev.start).toLocaleString()} {ev.end ? `- ${new Date(ev.end).toLocaleString()}` : ''}</div>
-                    <div className="mt-1 text-sm">{ev.extendedProps?.description}</div>
+                    <div style={{ fontWeight: 600 }}>{ev.title}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{new Date(ev.start).toLocaleString()} {ev.end ? `- ${new Date(ev.end).toLocaleString()}` : ''}</div>
+                    <div style={{ marginTop: 6, fontSize: 14 }}>{ev.extendedProps?.description}</div>
                   </div>
-                  <div className="flex flex-col gap-2 ml-4">
-                    <a href={`/assignments/${ev.id}`} className="px-2 py-1 bg-blue-200 rounded text-sm">Ver</a>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 140 }}>
+                    <Button variant="ghost" onClick={() => { window.location.href = `/assignments/${ev.id}`; }}>Ver</Button>
                     {(user && (user.role === 'teacher' || user.role === 'admin')) && (
                       <>
-                        <button onClick={() => handleEdit(ev)} className="px-2 py-1 bg-yellow-300 rounded">Editar</button>
-                        <button onClick={() => handleDelete(ev.id)} className="px-2 py-1 bg-red-500 text-white rounded">Eliminar</button>
+                        <Button variant="ghost" onClick={() => handleEdit(ev)}>Editar</Button>
+                        <Button variant="danger" onClick={() => handleDelete(ev.id)}>Eliminar</Button>
                       </>
                     )}
                   </div>
@@ -293,50 +303,51 @@ export default function CalendarPage() {
           </ul>
         )}
 
-        <div className="mt-3 flex items-center gap-2">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} className="px-2 py-1 border rounded">Anterior</button>
-          <div className="text-sm text-gray-600">Página {page}</div>
-          <button onClick={() => setPage(p => p + 1)} className="px-2 py-1 border rounded">Siguiente</button>
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button variant="ghost" onClick={() => setPage(p => Math.max(1, p - 1))}>Anterior</Button>
+            <div className="muted" style={{ fontSize: 12 }}>Página {page}</div>
+            <Button variant="ghost" onClick={() => setPage(p => p + 1)}>Siguiente</Button>
+          </div>
         </div>
       </div>
 
       {showForm && (
         <div className="fixed inset-0 z-40 flex items-center justify-center" aria-modal="true" role="dialog">
           <div className="fixed inset-0 bg-black opacity-40" onClick={() => setShowForm(false)} />
-            <div className="bg-white rounded shadow-lg z-50 w-full max-w-2xl mx-4 p-4 modal-content">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-semibold">{editingId ? 'Editar Asignación' : 'Crear Asignación'}</h3>
-              <button onClick={() => setShowForm(false)} aria-label="Cerrar" className="px-2 py-1 rounded bg-gray-200">Cerrar</button>
+            <div className="card modal-content" style={{ zIndex: 50, width: '100%', maxWidth: 720, margin: '0 16px', padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ fontWeight: 600 }}>{editingId ? 'Editar Asignación' : 'Crear Asignación'}</h3>
+              <Button variant="ghost" onClick={() => setShowForm(false)} ariaLabel="Cerrar">Cerrar</Button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-2">
+            <form onSubmit={handleCreate} style={{ display: 'grid', gap: 10 }}>
               <div>
-                <input autoFocus required placeholder="Título" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="border p-2 w-full" />
+                <input autoFocus required placeholder="Título" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="input" />
               </div>
               <div>
-                <textarea placeholder="Descripción" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="border p-2 w-full" />
+                <textarea placeholder="Descripción" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="input" />
               </div>
-              <div className="flex gap-2">
-                <input required type="datetime-local" value={form.start_at} onChange={e => setForm({ ...form, start_at: e.target.value })} className="border p-2 flex-1" />
-                <input type="datetime-local" value={form.end_at} onChange={e => setForm({ ...form, end_at: e.target.value })} className="border p-2 flex-1" />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input required type="datetime-local" value={form.start_at} onChange={e => setForm({ ...form, start_at: e.target.value })} className="input" />
+                <input type="datetime-local" value={form.end_at} onChange={e => setForm({ ...form, end_at: e.target.value })} className="input" />
               </div>
-              <div className="flex gap-2">
-                <select value={form.grade_id} onChange={e => setForm({ ...form, grade_id: e.target.value })} className="border p-2 w-1/2">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select value={form.grade_id} onChange={e => setForm({ ...form, grade_id: e.target.value })} className="input">
                   <option value="">-- Seleccionar grado (opcional) --</option>
                   {grades.map(g => (
                     <option key={g.id} value={g.id}>{g.name || g.label || `Grado ${g.id}`}</option>
                   ))}
                 </select>
 
-                <select value={form.subject_id} onChange={e => setForm({ ...form, subject_id: e.target.value })} className="border p-2 w-1/2">
+                <select value={form.subject_id} onChange={e => setForm({ ...form, subject_id: e.target.value })} className="input">
                   <option value="">-- Seleccionar materia (opcional) --</option>
                   {subjects.map(s => (
                     <option key={s.id} value={s.id}>{s.name || s.label || `Materia ${s.id}`}</option>
                   ))}
                 </select>
               </div>
-              <div className="flex gap-2 justify-end">
-                <button type="submit" className="bg-green-600 text-white px-3 py-1 rounded">{editingId ? 'Guardar' : 'Crear'}</button>
-                <button type="button" onClick={() => setShowForm(false)} className="bg-gray-200 px-3 py-1 rounded">Cancelar</button>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Button type="submit">{editingId ? 'Guardar' : 'Crear'}</Button>
+                <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
               </div>
             </form>
           </div>
@@ -346,8 +357,16 @@ export default function CalendarPage() {
       {showForm && null}
       {/* modal keyboard + focus trap handled by effect */}
 
-      {loading && <div className="mt-2">Cargando eventos...</div>}
+      {loading && <div className="muted" style={{ marginTop: 8 }}>Cargando eventos...</div>}
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'info' })} />
+      <ConfirmModal
+        open={confirmOpen}
+        message="¿Eliminar esta asignación?"
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

@@ -14,14 +14,14 @@ Archivo maestro para seguir progreso de features críticos: representantes, cons
 ---
 
 ## Prioridad inmediata (P0)
-- [ ] Crear migraciones: representatives, consents, representative_access_logs
-- [ ] Router backend: routes/representatives.js (endpoints mínimos)
-- [ ] Tests backend: backend/tests/representatives.test.js (Jest + supertest)
-- [ ] UI mínimo: frontend/src/pages/RepresentativeDashboard.jsx
-- [ ] Logging: registrar accesos de representantes en tabla audit
+- [x] Crear migraciones: representatives, consents, representative_access_logs
+- [x] Router backend: routes/representatives.js (endpoints mínimos)
+- [x] Tests backend: backend/tests/representatives.test.js (Jest + supertest)
+- [x] UI mínimo: frontend/src/pages/RepresentativeDashboard.jsx
+- [x] Logging: registrar accesos de representantes en tabla audit
 
 ## Prioridad alta (P1)
-- [ ] Endpoints admin bulk: /admin/users/import, /admin/enrollments/bulk
+- [x] Endpoints admin bulk: /admin/users/import, /admin/enrollments/bulk
 - [ ] Previsualización de import CSV en UI admin
 - [ ] Reglas de visibilidad para calendar endpoints
 
@@ -29,6 +29,13 @@ Archivo maestro para seguir progreso de features críticos: representantes, cons
 - [x] E2E: flujo solicitud → consentimiento → acceso (e2e_ui_test.sh)
 - [x] Notificaciones y resúmenes configurables (email / toast)
 - [x] Feature flags y rollout en staging
+
+---
+
+## Estado (actualizado 2026-02-06)
+- Representantes: completo (migraciones + rutas + UI + tests).
+- Bulk admin: endpoints listos; falta UI de previsualización.
+- Notificaciones y feature flags: implementadas (backend + UI).
 
 ## DoR (Definition of Ready) — checklist mínima para historia
 - Criterios de aceptación claros

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchSubjects, createSubject, updateSubject, deleteSubject } from '../api/subjects';
 import AssignTeachersModal from '../components/AssignTeachersModal';
+import Button from '../components/ui/Button';
 
 export default function AdminSubjects() {
   const [subjects, setSubjects] = useState([]);
@@ -47,70 +48,91 @@ export default function AdminSubjects() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Administración de Materias</h2>
-      <div className="mb-3">
-        <button onClick={createNew} className="btn btn-primary">Crear Materia</button>
-      </div>
-
-      {loading ? (
-        <div>Cargando materias...</div>
-      ) : (
-        <table className="w-full border">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="p-2">Código</th>
-              <th className="p-2">Nombre</th>
-              <th className="p-2">Grado</th>
-              <th className="p-2">Horas</th>
-              <th className="p-2">Secciones</th>
-              <th className="p-2">Activo</th>
-              <th className="p-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subjects.map(s => (
-              <tr key={s.id} className="border-t">
-                <td className="p-2">{s.code}</td>
-                <td className="p-2">{s.name}</td>
-                <td className="p-2">{s.grade}</td>
-                <td className="p-2">{s.hours}</td>
-                <td className="p-2">{s.sections}</td>
-                <td className="p-2">{s.active ? 'Sí' : 'No'}</td>
-                <td className="p-2">
-                  <button onClick={() => startEdit(s)} className="btn btn-secondary mr-2">Editar</button>
-                  <button onClick={() => openAssign(s)} className="btn btn-secondary mr-2">Asignar Profesores</button>
-                  <button onClick={() => handleDelete(s.id)} className="btn btn-danger">Eliminar</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {editing && (
-        <div className="mt-4 p-4 border rounded bg-white">
-          <h3 className="font-medium mb-2">{editing === 'new' ? 'Crear Materia' : `Editar Materia ${editing}`}</h3>
-          <div className="grid grid-cols-2 gap-2">
-            <input placeholder="Código" value={form.code} onChange={e=>setForm({...form, code: e.target.value})} className="p-2 border" />
-            <input placeholder="Nombre" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="p-2 border" />
-            <input placeholder="Grado" value={form.grade} onChange={e=>setForm({...form, grade: e.target.value})} className="p-2 border" />
-            <input placeholder="Horas" value={form.hours} onChange={e=>setForm({...form, hours: e.target.value})} className="p-2 border" />
-            <input placeholder="Secciones" value={form.sections} onChange={e=>setForm({...form, sections: e.target.value})} className="p-2 border" />
-            <label className="flex items-center gap-2"><input type="checkbox" checked={form.active} onChange={e=>setForm({...form, active: e.target.checked})} /> Activo</label>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Administración de Materias</h2>
+            <p className="section-subtitle">Catálogo académico y asignaciones.</p>
           </div>
-          <div className="mt-3">
-            <button onClick={save} className="btn btn-primary mr-2">Guardar</button>
-            <button onClick={()=>setEditing(null)} className="btn">Cancelar</button>
-          </div>
+          <Button onClick={createNew} icon="＋">Crear Materia</Button>
         </div>
-      )}
-      <AssignTeachersModal
-        open={assignModal.open}
-        subject={assignModal.subject}
-        onClose={closeAssign}
-        onSave={saveAssign}
-      />
+
+        {loading ? (
+          <div className="muted" style={{ marginTop: 16 }}>Cargando materias...</div>
+        ) : (
+          <div className="table-container" style={{ marginTop: 16 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Nombre</th>
+                  <th>Grado</th>
+                  <th>Horas</th>
+                  <th>Secciones</th>
+                  <th>Activo</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subjects.map(s => (
+                  <tr key={s.id}>
+                    <td>{s.code}</td>
+                    <td style={{ fontWeight: 600 }}>{s.name}</td>
+                    <td>{s.grade}</td>
+                    <td>{s.hours}</td>
+                    <td>{s.sections}</td>
+                    <td>
+                      <span className={`badge ${s.active ? 'badge-success' : 'badge-danger'}`}>{s.active ? 'Activo' : 'Inactivo'}</span>
+                    </td>
+                    <td>
+                      <Button variant="ghost" className="mr-2 text-sm" onClick={() => startEdit(s)} icon="✎">Editar</Button>
+                      <Button variant="secondary" className="mr-2 text-sm" onClick={() => openAssign(s)} icon="👥">Asignar</Button>
+                      <Button variant="danger" className="text-sm" onClick={() => handleDelete(s.id)} icon="✕">Eliminar</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {editing && (
+          <div className="card" style={{ marginTop: 16, padding: 16 }}>
+            <h3 style={{ fontWeight: 600, marginBottom: 10 }}>{editing === 'new' ? 'Crear Materia' : `Editar Materia ${editing}`}</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <label className="label">Código
+                <input placeholder="Código" value={form.code} onChange={e=>setForm({...form, code: e.target.value})} className="input" />
+              </label>
+              <label className="label">Nombre
+                <input placeholder="Nombre" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="input" />
+              </label>
+              <label className="label">Grado
+                <input placeholder="Grado" value={form.grade} onChange={e=>setForm({...form, grade: e.target.value})} className="input" />
+              </label>
+              <label className="label">Horas
+                <input placeholder="Horas" value={form.hours} onChange={e=>setForm({...form, hours: e.target.value})} className="input" />
+              </label>
+              <label className="label">Secciones
+                <input placeholder="Secciones" value={form.sections} onChange={e=>setForm({...form, sections: e.target.value})} className="input" />
+              </label>
+              <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <input type="checkbox" checked={form.active} onChange={e=>setForm({...form, active: e.target.checked})} /> Activo
+              </label>
+            </div>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+              <Button onClick={save} icon="✔">Guardar</Button>
+              <Button variant="ghost" onClick={()=>setEditing(null)}>Cancelar</Button>
+            </div>
+          </div>
+        )}
+        <AssignTeachersModal
+          open={assignModal.open}
+          subject={assignModal.subject}
+          onClose={closeAssign}
+          onSave={saveAssign}
+        />
+      </div>
     </div>
   );
 }

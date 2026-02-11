@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { useNavigate } from 'react-router-dom';
+import Button from '../components/ui/Button';
+import { useToast } from '../contexts/ToastContext';
 
 export default function QuizCreate() {
   const [lessonId, setLessonId] = useState('');
@@ -10,8 +12,8 @@ export default function QuizCreate() {
   const [defaultThreshold, setDefaultThreshold] = useState(null);
   const [passPercent, setPassPercent] = useState('50');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const addQuestion = () => {
     setQuestions(prev => [...prev, { question_text: '', question_type: 'mcq', points: 1, choices: [{ text: '', is_correct: false }, { text: '', is_correct: false }] }]);
@@ -20,7 +22,7 @@ export default function QuizCreate() {
   useEffect(() => {
     const fetchLessons = async () => {
       try {
-        const res = await axios.get('/api/lessons');
+        const res = await api.get('/lessons');
         const rows = res.data || [];
         const collected = rows.map(r => ({ id: r.lesson_id, title: `${r.course_title} / ${r.module_title} / ${r.lesson_title}` }));
         setLessons(collected);
@@ -31,7 +33,7 @@ export default function QuizCreate() {
     fetchLessons();
     const fetchConfig = async () => {
       try {
-        const r = await axios.get('/api/config');
+        const r = await api.get('/config');
         const thr = r.data?.quizPassThreshold ?? 0.5;
         setDefaultThreshold(thr);
         setPassPercent(String(Math.round(thr * 100)));
@@ -68,36 +70,35 @@ export default function QuizCreate() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage(null);
     // Validaciones básicas
     if (!lessonId || !title || questions.length === 0) {
-      setMessage({ type: 'error', text: 'Completa la lección, título y al menos una pregunta.' });
+      addToast('Completa la lección, título y al menos una pregunta.', { type: 'error' });
       return;
     }
 
     // Validate passPercent is numeric and between 0-100
     const pp = Number(passPercent);
     if (Number.isNaN(pp) || pp < 0 || pp > 100) {
-      setMessage({ type: 'error', text: 'Umbral debe ser un número entre 0 y 100.' });
+      addToast('Umbral debe ser un número entre 0 y 100.', { type: 'error' });
       return;
     }
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       if (!q.question_text || String(q.question_text).trim() === '') {
-        setMessage({ type: 'error', text: `Pregunta ${i + 1}: texto requerido.` });
+        addToast(`Pregunta ${i + 1}: texto requerido.`, { type: 'error' });
         setLoading(false);
         return;
       }
       if (q.question_type === 'mcq') {
         if (!q.choices || q.choices.length < 2) {
-          setMessage({ type: 'error', text: `Pregunta ${i + 1}: se requieren al menos 2 opciones.` });
+          addToast(`Pregunta ${i + 1}: se requieren al menos 2 opciones.`, { type: 'error' });
           setLoading(false);
           return;
         }
         const hasCorrect = q.choices.some(c => c.is_correct);
         if (!hasCorrect) {
-          setMessage({ type: 'error', text: `Pregunta ${i + 1}: marca al menos una opción correcta.` });
+          addToast(`Pregunta ${i + 1}: marca al menos una opción correcta.`, { type: 'error' });
           setLoading(false);
           return;
         }
@@ -105,7 +106,7 @@ export default function QuizCreate() {
         for (let ci = 0; ci < q.choices.length; ci++) {
           const ct = String(q.choices[ci].text || '').trim();
           if (!ct) {
-            setMessage({ type: 'error', text: `Pregunta ${i + 1}: la opción ${ci + 1} debe tener texto.` });
+            addToast(`Pregunta ${i + 1}: la opción ${ci + 1} debe tener texto.`, { type: 'error' });
             setLoading(false);
             return;
           }
@@ -113,7 +114,7 @@ export default function QuizCreate() {
       }
       // ensure points numeric
       if (q.points && Number.isNaN(Number(q.points))) {
-        setMessage({ type: 'error', text: `Pregunta ${i + 1}: puntos debe ser un número.` });
+        addToast(`Pregunta ${i + 1}: puntos debe ser un número.`, { type: 'error' });
         setLoading(false);
         return;
       }
@@ -133,92 +134,108 @@ export default function QuizCreate() {
         }))
       };
 
-      const res = await axios.post('/api/quizzes', payload);
-      setMessage({ type: 'success', text: 'Quiz creado correctamente' });
+      await api.post('/quizzes', payload);
+      window.dispatchEvent(new CustomEvent('app:toast', { detail: { type: 'success', message: 'Quiz creado correctamente' } }));
       // navigate to lesson quiz take page
       setTimeout(() => navigate(`/quiz/take/${lessonId}`), 700);
     } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'Error al crear quiz' });
+      addToast(err.response?.data?.error || 'Error al crear quiz', { type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-4">Crear Quiz</h2>
-      {message && (
-        <div className={`p-2 mb-4 ${message.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-          {message.text}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium">Lesson ID</label>
-          <select value={lessonId} onChange={e => setLessonId(e.target.value)} className="border p-2 w-full">
-            <option value="">Selecciona una lección...</option>
-            {lessons.map(l => (
-              <option key={l.id} value={l.id}>{l.title}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium">Umbral para aprobar (porcentaje)</label>
-          <div className="flex gap-2 items-center">
-            <input value={passPercent} onChange={e => setPassPercent(e.target.value)} className="border p-2 w-24" />
-            <div className="text-sm text-gray-600">{defaultThreshold !== null ? `por defecto ${Math.round(defaultThreshold*100)}%` : ''}</div>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Crear quiz</h2>
+            <p className="section-subtitle">Configura el cuestionario, preguntas y umbral de aprobación.</p>
           </div>
+          <span className="pill">Docente</span>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium">Título del Quiz</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} className="border p-2 w-full" placeholder="Título del quiz" />
-        </div>
+        <form onSubmit={handleSubmit} style={{ marginTop: 16, display: 'grid', gap: 16 }}>
+          <div>
+            <label className="label">Lección</label>
+            <select value={lessonId} onChange={e => setLessonId(e.target.value)} className="input">
+              <option value="">Selecciona una lección...</option>
+              {lessons.map(l => (
+                <option key={l.id} value={l.id}>{l.title}</option>
+              ))}
+            </select>
+          </div>
 
-        <div>
-          <h3 className="font-semibold">Preguntas</h3>
-          <button type="button" onClick={addQuestion} className="mt-2 mb-4 bg-blue-600 text-white px-3 py-1 rounded">Agregar pregunta</button>
-
-          {questions.map((q, qi) => (
-            <div key={qi} className="border p-3 mb-3">
-              <div className="flex justify-between items-center">
-                <strong>Pregunta {qi + 1}</strong>
-                <button type="button" onClick={() => removeQuestion(qi)} className="text-sm text-red-600">Eliminar</button>
-              </div>
-              <input value={q.question_text} onChange={e => updateQuestion(qi, 'question_text', e.target.value)} className="border p-2 w-full my-2" placeholder="Texto de la pregunta" />
-              <div className="flex gap-2 mb-2">
-                <input value={q.points} onChange={e => updateQuestion(qi, 'points', e.target.value)} className="border p-2 w-24" placeholder="Puntos" />
-                <select value={q.question_type} onChange={e => updateQuestion(qi, 'question_type', e.target.value)} className="border p-2">
-                  <option value="mcq">Opción múltiple</option>
-                  <option value="truefalse">Verdadero/Falso</option>
-                  <option value="short">Respuesta corta</option>
-                </select>
-              </div>
-
-              <div>
-                <h4 className="font-medium">Opciones</h4>
-                {q.choices.map((c, ci) => (
-                  <div key={ci} className="flex gap-2 items-center mt-2">
-                    <input value={c.text} onChange={e => updateChoice(qi, ci, 'text', e.target.value)} className="border p-2 flex-1" placeholder={`Opción ${ci + 1}`} />
-                    <label className="flex items-center gap-1">
-                      <input type="checkbox" checked={!!c.is_correct} onChange={e => updateChoice(qi, ci, 'is_correct', e.target.checked)} /> Correcta
-                    </label>
-                    <button type="button" onClick={() => removeChoice(qi, ci)} className="text-sm text-red-600">Eliminar</button>
-                  </div>
-                ))}
-
-                <button type="button" onClick={() => addChoice(qi)} className="mt-2 bg-gray-200 px-2 py-1 rounded">Agregar opción</button>
-              </div>
+          <div>
+            <label className="label">Umbral para aprobar (porcentaje)</label>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input value={passPercent} onChange={e => setPassPercent(e.target.value)} className="input" style={{ maxWidth: 120 }} />
+              {defaultThreshold !== null && (
+                <div className="muted" style={{ fontSize: 12 }}>Por defecto {Math.round(defaultThreshold * 100)}%</div>
+              )}
             </div>
-          ))}
-        </div>
+          </div>
 
-        <div>
-          <button type="submit" disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded">{loading ? 'Creando...' : 'Crear Quiz'}</button>
-        </div>
-      </form>
+          <div>
+            <label className="label">Título del quiz</label>
+            <input value={title} onChange={e => setTitle(e.target.value)} className="input" placeholder="Título del quiz" />
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ fontWeight: 600, marginBottom: 6 }}>Preguntas</h3>
+                <div className="muted" style={{ fontSize: 12 }}>Agrega preguntas de opción múltiple, verdadero/falso o respuesta corta.</div>
+              </div>
+              <Button type="button" onClick={addQuestion}>Agregar pregunta</Button>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+              {questions.length === 0 && <div className="muted">Aún no agregas preguntas.</div>}
+              {questions.map((q, qi) => (
+                <div key={qi} className="card" style={{ padding: 16, border: '1px solid var(--border)', boxShadow: 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong>Pregunta {qi + 1}</strong>
+                    <Button type="button" variant="ghost" onClick={() => removeQuestion(qi)} className="text-sm">Eliminar</Button>
+                  </div>
+                  <input value={q.question_text} onChange={e => updateQuestion(qi, 'question_text', e.target.value)} className="input" placeholder="Texto de la pregunta" style={{ marginTop: 10 }} />
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                    <input value={q.points} onChange={e => updateQuestion(qi, 'points', e.target.value)} className="input" style={{ maxWidth: 120 }} placeholder="Puntos" />
+                    <select value={q.question_type} onChange={e => updateQuestion(qi, 'question_type', e.target.value)} className="input" style={{ maxWidth: 220 }}>
+                      <option value="mcq">Opción múltiple</option>
+                      <option value="truefalse">Verdadero/Falso</option>
+                      <option value="short">Respuesta corta</option>
+                    </select>
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <h4 style={{ fontWeight: 600, marginBottom: 6 }}>Opciones</h4>
+                    {q.choices.map((c, ci) => (
+                      <div key={ci} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+                        <input value={c.text} onChange={e => updateChoice(qi, ci, 'text', e.target.value)} className="input" placeholder={`Opción ${ci + 1}`} style={{ flex: 1, minWidth: 220 }} />
+                        <label className="label" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: 0 }}>
+                          <input type="checkbox" checked={!!c.is_correct} onChange={e => updateChoice(qi, ci, 'is_correct', e.target.checked)} />
+                          Correcta
+                        </label>
+                        <Button type="button" variant="ghost" onClick={() => removeChoice(qi, ci)} className="text-sm">Eliminar</Button>
+                      </div>
+                    ))}
+
+                    <div style={{ marginTop: 10 }}>
+                      <Button type="button" variant="secondary" onClick={() => addChoice(qi)}>Agregar opción</Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button type="submit" disabled={loading}>{loading ? 'Creando...' : 'Crear quiz'}</Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
+import Button from '../components/ui/Button';
 
 export default function BulkImportPage(){
   const [fileName, setFileName] = useState(null);
@@ -52,18 +53,20 @@ export default function BulkImportPage(){
         </div>
 
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            className={importType === 'users' ? 'btn-primary' : 'btn-ghost'}
+          <Button
+            type="button"
+            variant={importType === 'users' ? 'primary' : 'ghost'}
             onClick={() => { setImportType('users'); setReport(null); }}
           >
             Usuarios
-          </button>
-          <button
-            className={importType === 'enrollments' ? 'btn-primary' : 'btn-ghost'}
+          </Button>
+          <Button
+            type="button"
+            variant={importType === 'enrollments' ? 'primary' : 'ghost'}
             onClick={() => { setImportType('enrollments'); setReport(null); }}
           >
             Inscripciones
-          </button>
+          </Button>
         </div>
 
         <div className="card-muted" style={{ marginTop: 12, padding: 12, border: '1px solid var(--border)' }}>
@@ -93,8 +96,8 @@ export default function BulkImportPage(){
         )}
 
         <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn-primary" onClick={onSubmit} disabled={uploading}><span className="btn-icon" aria-hidden="true">✔</span><span className="btn-label">{uploading ? 'Procesando...' : 'Procesar importación'}</span></button>
-          <button className="btn-ghost" onClick={() => { setPreview([]); setFileName(null); setFileText(''); }}>Limpiar</button>
+          <Button onClick={onSubmit} disabled={uploading}>{uploading ? 'Procesando...' : 'Procesar importación'}</Button>
+          <Button variant="ghost" onClick={() => { setPreview([]); setFileName(null); setFileText(''); }}>Limpiar</Button>
         </div>
 
         {report && (

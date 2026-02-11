@@ -1,4 +1,4 @@
-import axios from 'axios';
+import api from '../lib/api';
 import subjectsMock from '../mocks/subjects';
 
 const STORAGE_KEY = 'smartstudio_subjects_v1';
@@ -10,7 +10,7 @@ function seedStorageIfNeeded() {
 
 export async function fetchSubjects() {
   try {
-    const res = await axios.get('/api/subjects');
+    const res = await api.get('/subjects');
     return res.data.subjects || res.data;
   } catch (err) {
     seedStorageIfNeeded();
@@ -20,7 +20,7 @@ export async function fetchSubjects() {
 
 export async function createSubject(payload) {
   try {
-    const res = await axios.post('/api/subjects', payload);
+    const res = await api.post('/subjects', payload);
     return res.data;
   } catch (err) {
     seedStorageIfNeeded();
@@ -35,7 +35,7 @@ export async function createSubject(payload) {
 
 export async function updateSubject(id, payload) {
   try {
-    const res = await axios.put(`/api/subjects/${id}`, payload);
+    const res = await api.put(`/subjects/${id}`, payload);
     return res.data;
   } catch (err) {
     seedStorageIfNeeded();
@@ -49,7 +49,7 @@ export async function updateSubject(id, payload) {
 
 export async function deleteSubject(id) {
   try {
-    const res = await axios.delete(`/api/subjects/${id}`);
+    const res = await api.delete(`/subjects/${id}`);
     return res.data;
   } catch (err) {
     seedStorageIfNeeded();

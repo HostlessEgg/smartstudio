@@ -22,21 +22,35 @@ export default function MyProgressPage(){
     return ()=>{ mounted=false };
   },[]);
 
-  if (!progress) return <div className="container mx-auto p-4">Cargando progreso...</div>;
+  if (!progress) return <div className="page"><div className="card" style={{ padding: 24 }}><div className="muted">Cargando progreso...</div></div></div>;
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Mi Progreso</h2>
-      <div className="space-y-3">
-        {progress.map((p, i) => (
-          <div key={i} className="p-3 border rounded">
-            <div className="font-medium">{p.course}</div>
-            <div className="text-sm text-gray-600">{p.completed} / {p.total} lecciones completadas</div>
-            <div className="w-full bg-gray-200 h-2 mt-2">
-              <div style={{ width: `${Math.round((p.completed/p.total)*100)}%` }} className="bg-green-500 h-2" />
-            </div>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Mi progreso</h2>
+            <p className="section-subtitle">Consulta el avance por curso.</p>
           </div>
-        ))}
+          <span className="pill">Estudiante</span>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {progress.map((p, i) => {
+            const percent = p.total ? Math.round((p.completed / p.total) * 100) : 0;
+            return (
+              <div key={i} className="progress-item">
+                <div className="progress-info">
+                  <span style={{ fontWeight: 600 }}>{p.course}</span>
+                  <span className="muted">{p.completed} / {p.total} lecciones</span>
+                </div>
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

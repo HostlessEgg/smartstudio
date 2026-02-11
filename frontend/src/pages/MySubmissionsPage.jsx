@@ -36,7 +36,7 @@ export default function MySubmissionsPage(){
         </div>
 
         {loading ? <div style={{ marginTop: 16 }}><Spinner /></div> : (
-          <div className="table-responsive" style={{ marginTop: 16 }}>
+          <div className="table-container" style={{ marginTop: 16 }}>
             <table className="table">
               <thead>
                 <tr>
@@ -54,7 +54,9 @@ export default function MySubmissionsPage(){
                     <td>{s.id}</td>
                     <td style={{ fontWeight: 600 }}>{s.assignment_title || s.assignment_id}</td>
                     <td>
-                      <span className="pill">{s.score !== null && s.score !== undefined ? 'Calificada' : 'Enviada'}</span>
+                      <span className={`badge ${s.score !== null && s.score !== undefined ? 'badge-success' : 'badge-warning'}`}>
+                        {s.score !== null && s.score !== undefined ? 'Calificada' : 'Enviada'}
+                      </span>
                       {s.feedback ? <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>Feedback disponible</span> : null}
                     </td>
                     <td>{s.score !== null && s.score !== undefined ? s.score : '—'}</td>
@@ -66,7 +68,7 @@ export default function MySubmissionsPage(){
                 ))}
                 {subs.length === 0 && (
                   <tr>
-                    <td className="muted" colSpan={5}>Sin entregas aún.</td>
+                    <td className="muted" colSpan={6}>Sin entregas aún.</td>
                   </tr>
                 )}
               </tbody>

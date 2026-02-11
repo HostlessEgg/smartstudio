@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import Button from '../components/ui/Button';
 
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -79,91 +80,69 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-700 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">SMARTSTUDIO</h1>
-          <p className="text-gray-600 mt-2">Sistema de Gestión de Aprendizaje</p>
+    <div style={{ minHeight: '100vh', background: 'var(--background)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="card" style={{ padding: 28, maxWidth: 420, width: '100%' }}>
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <h1 className="section-title">SmartStudio</h1>
+          <p className="section-subtitle">Sistema de gestión de aprendizaje</p>
         </div>
 
-        <div className="flex mb-6 border-b">
-          <button
-            onClick={() => setIsLogin(true)}
-            className={`flex-1 py-3 font-semibold ${
-              isLogin 
-                ? 'text-purple-600 border-b-2 border-purple-600' 
-                : 'text-gray-500'
-            }`}
-          >
-            Iniciar Sesión
-          </button>
-          <button
-            onClick={() => setIsLogin(false)}
-            className={`flex-1 py-3 font-semibold ${
-              !isLogin 
-                ? 'text-purple-600 border-b-2 border-purple-600' 
-                : 'text-gray-500'
-            }`}
-          >
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+          <Button type="button" variant={isLogin ? 'primary' : 'ghost'} onClick={() => setIsLogin(true)}>
+            Iniciar sesión
+          </Button>
+          <Button type="button" variant={!isLogin ? 'primary' : 'ghost'} onClick={() => setIsLogin(false)}>
             Registrarse
-          </button>
+          </Button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12 }}>
           {!isLogin && (
-            <div className="mb-4">
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Nombre Completo
-              </label>
+            <div>
+              <label className="label">Nombre completo</label>
               <input
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                className="input"
                 required={!isLogin}
               />
             </div>
           )}
 
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2">
-              Correo Electrónico
-            </label>
+          <div>
+            <label className="label">Correo electrónico</label>
             <input
               type="email"
               name="email"
               value={formData.email}
               onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+              className="input"
               required
             />
           </div>
 
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2">
-              Contraseña
-            </label>
+          <div>
+            <label className="label">Contraseña</label>
             <input
               type="password"
               name="password"
               value={formData.password}
               onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+              className="input"
               required
             />
           </div>
 
           {!isLogin && (
-            <div className="mb-6">
-              <label className="block text-gray-700 text-sm font-bold mb-2">
-                Rol
-              </label>
+            <div>
+              <label className="label">Rol</label>
               <select
                 name="role"
                 value={formData.role}
                 onChange={handleChange}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                className="input"
               >
                 <option value="student">Estudiante</option>
                 <option value="teacher">Profesor</option>
@@ -172,18 +151,14 @@ const Login = () => {
           )}
 
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            <div className="card" style={{ padding: 12, border: '1px solid var(--danger)', boxShadow: 'none', color: 'var(--danger)', background: 'rgba(255,59,48,0.08)' }}>
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 disabled:opacity-50"
-          >
-            {loading ? 'Cargando...' : (isLogin ? 'Ingresar al Sistema' : 'Crear Cuenta')}
-          </button>
+          <Button type="submit" disabled={loading}>
+            {loading ? 'Cargando...' : (isLogin ? 'Ingresar' : 'Crear cuenta')}
+          </Button>
         </form>
       </div>
     </div>

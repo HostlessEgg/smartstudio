@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import api from '../lib/api';
 import SubmissionBox from '../components/SubmissionBox';
 import GradeBook from '../components/GradeBook';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,7 +15,7 @@ export default function AssignmentView() {
     const fetch = async () => {
       setLoading(true);
       try {
-        const res = await axios.get('/api/assignments');
+        const res = await api.get('/assignments');
         const rows = res.data || [];
         const found = rows.find(r => String(r.id) === String(id));
         setAssignment(found || null);
@@ -28,16 +28,23 @@ export default function AssignmentView() {
     fetch();
   }, [id]);
 
-  if (loading) return <div className="p-4">Cargando asignación...</div>;
-  if (!assignment) return <div className="p-4">Asignación no encontrada</div>;
+  if (loading) return <div className="page"><div className="card" style={{ padding: 24 }}>Cargando asignación...</div></div>;
+  if (!assignment) return <div className="page"><div className="card" style={{ padding: 24 }}>Asignación no encontrada</div></div>;
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-2">{assignment.title}</h2>
-      <div className="text-sm text-gray-600 mb-4">{assignment.start_at} {assignment.end_at ? `- ${assignment.end_at}` : ''}</div>
-      <div className="mb-6">{assignment.description}</div>
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">{assignment.title}</h2>
+            <p className="section-subtitle">{assignment.start_at ? new Date(assignment.start_at).toLocaleString() : ''} {assignment.end_at ? `— ${new Date(assignment.end_at).toLocaleString()}` : ''}</p>
+          </div>
+          <span className="badge badge-primary">Asignación</span>
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div style={{ marginTop: 12 }}>{assignment.description}</div>
+
+        <div className="cards-grid" style={{ marginTop: 16 }}>
         {user && user.role === 'student' && (
           <SubmissionBox assignmentId={String(assignment.id)} />
         )}
@@ -45,6 +52,7 @@ export default function AssignmentView() {
         {user && (user.role === 'teacher' || user.role === 'admin') && (
           <GradeBook assignmentId={String(assignment.id)} />
         )}
+        </div>
       </div>
     </div>
   );

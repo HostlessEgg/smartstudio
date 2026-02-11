@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../lib/api';
 import Spinner from '../components/Spinner';
+import Button from '../components/ui/Button';
 
 export default function AdminAudits() {
   const [audits, setAudits] = useState([]);
@@ -48,7 +49,7 @@ export default function AdminAudits() {
       <div className="card" style={{ padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <h2 className="section-title">Audit Log</h2>
+            <h2 className="section-title">Auditoría</h2>
             <p className="section-subtitle">Trazabilidad de acciones del sistema.</p>
           </div>
           <span className="pill">Admin</span>
@@ -56,12 +57,12 @@ export default function AdminAudits() {
 
         <div style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <input className="input" placeholder="Buscar acción/entidad/ip" value={q} onChange={e=>setQ(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
-          <button onClick={()=>fetch(1)} className="btn-primary">Buscar</button>
-          <button onClick={exportCsv} className="btn-ghost" disabled={downloading}>{downloading ? 'Exportando...' : 'Exportar CSV'}</button>
+          <Button onClick={()=>fetch(1)}>Buscar</Button>
+          <Button variant="secondary" onClick={exportCsv} disabled={downloading}>{downloading ? 'Exportando...' : 'Exportar CSV'}</Button>
         </div>
 
         {loading ? <div style={{ marginTop: 16 }}><Spinner message="Cargando auditoría..." /></div> : (
-          <div className="table-responsive" style={{ marginTop: 16 }}>
+          <div className="table-container" style={{ marginTop: 16 }}>
             <table className="table">
               <thead>
                 <tr>
@@ -79,11 +80,11 @@ export default function AdminAudits() {
                   <tr key={a.id}>
                     <td>{a.id}</td>
                     <td>{a.user_id}</td>
-                    <td>{a.action}</td>
+                    <td><span className="badge badge-primary">{a.action}</span></td>
                     <td>{a.entity} {a.entity_id ? `#${a.entity_id}` : ''}</td>
                     <td><pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, margin: 0 }}>{a.details}</pre></td>
                     <td>{a.ip}</td>
-                    <td>{new Date(a.created_at).toLocaleString()}</td>
+                    <td className="muted">{new Date(a.created_at).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -92,9 +93,9 @@ export default function AdminAudits() {
         )}
 
         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={()=>fetch(Math.max(1, meta.page-1))} className="btn-ghost">Anterior</button>
+          <Button variant="ghost" onClick={()=>fetch(Math.max(1, meta.page-1))}>Anterior</Button>
           <div className="muted">Página {meta.page} / {meta.total_pages}</div>
-          <button onClick={()=>fetch(Math.min(meta.total_pages, meta.page+1))} className="btn-ghost">Siguiente</button>
+          <Button variant="ghost" onClick={()=>fetch(Math.min(meta.total_pages, meta.page+1))}>Siguiente</Button>
         </div>
       </div>
     </div>

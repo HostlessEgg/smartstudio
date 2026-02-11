@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import Button from './ui/Button';
 
 export default function ConfirmModal({ open, message, onClose, onConfirm, confirmLabel = 'Aceptar', cancelLabel = 'Cancelar' }) {
   const confirmRef = useRef(null);
@@ -19,8 +20,8 @@ export default function ConfirmModal({ open, message, onClose, onConfirm, confir
         <div className="progress-modal-body">
           <p>{message}</p>
           <div className="mt-4 flex gap-2">
-            <button ref={confirmRef} onClick={onConfirm} className="btn btn-primary">{confirmLabel}</button>
-            <button onClick={onClose} className="btn">{cancelLabel}</button>
+            <Button ref={confirmRef} onClick={onConfirm}>{confirmLabel}</Button>
+            <Button variant="ghost" onClick={onClose}>{cancelLabel}</Button>
           </div>
         </div>
       </div>

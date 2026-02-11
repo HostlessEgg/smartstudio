@@ -1,3 +1,5 @@
+// NOTE: Este backend modular está en desuso. El backend oficial es `backend/server.js`.
+// Se mantiene solo como referencia hasta completar la migración a arquitectura modular.
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';

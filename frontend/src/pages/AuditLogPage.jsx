@@ -14,33 +14,51 @@ export default function AuditLogPage(){
   const filtered = logs.filter(l => (l.user || '').toLowerCase().includes(q.toLowerCase()) || (l.action || '').toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Visor de Auditoría - Mock</h2>
-      <div className="mb-4">
-        <input aria-label="Buscar auditoría" className="border p-2 w-1/3" placeholder="Buscar usuario o acción" value={q} onChange={e=>setQ(e.target.value)} />
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Auditoría</h2>
+            <p className="section-subtitle">Revisa eventos y acciones registradas.</p>
+          </div>
+          <span className="pill">Admin</span>
+        </div>
+
+        <div style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input aria-label="Buscar auditoría" className="input" placeholder="Buscar usuario o acción" value={q} onChange={e=>setQ(e.target.value)} style={{ maxWidth: 360 }} />
+          <div className="muted" style={{ fontSize: 12 }}>{filtered.length} eventos</div>
+        </div>
+
+        <div className="table-container" style={{ marginTop: 16 }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Usuario</th>
+                <th>Acción</th>
+                <th>Entidad</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((l, idx) => (
+                <tr key={idx}>
+                  <td>{new Date(l.created_at || l.at || Date.now()).toLocaleString()}</td>
+                  <td>{l.user || l.user_id || 'N/A'}</td>
+                  <td>{l.action}</td>
+                  <td>{l.entity}</td>
+                  <td>{l.entity_id}</td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">No hay eventos para mostrar.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="text-left">
-            <th className="p-2">Fecha</th>
-            <th className="p-2">Usuario</th>
-            <th className="p-2">Acción</th>
-            <th className="p-2">Entidad</th>
-            <th className="p-2">ID</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((l, idx) => (
-            <tr key={idx} className="border-t">
-              <td className="p-2">{new Date(l.created_at || l.at || Date.now()).toLocaleString()}</td>
-              <td className="p-2">{l.user || l.user_id || 'N/A'}</td>
-              <td className="p-2">{l.action}</td>
-              <td className="p-2">{l.entity}</td>
-              <td className="p-2">{l.entity_id}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

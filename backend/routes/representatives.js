@@ -1,24 +1,19 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { check, validationResult } from 'express-validator';
+import { getConnection } from '../lib/db.js';
 
 dotenv.config();
 
 const router = express.Router();
 
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'smartstudio_lms'
-};
-
 // Lightweight auth middleware (duplicates server.js behavior for modular router)
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const headerToken = authHeader && authHeader.split(' ')[1];
+  const cookieToken = req.cookies?.access_token;
+  const token = headerToken || cookieToken;
   if (!token) return res.status(401).json({ error: 'Token required' });
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
@@ -39,7 +34,7 @@ router.post('/',
     const { studentId } = req.body;
 
     try {
-      const connection = await mysql.createConnection(dbConfig);
+      const connection = await getConnection();
       // create or get representative entry
       const [existing] = await connection.execute('SELECT id FROM representatives WHERE user_id = ?', [representativeUserId]);
       let representativeId;
@@ -84,7 +79,7 @@ router.post('/consent',
     if (!req.user || req.user.userId !== Number(studentId)) return res.status(403).json({ error: 'Only the student can grant/revoke consent' });
 
     try {
-      const connection = await mysql.createConnection(dbConfig);
+      const connection = await getConnection();
       if (action === 'grant') {
         // set active true and set granted_by
         await connection.execute(
@@ -119,7 +114,7 @@ router.post('/consent',
 // GET /api/representatives/students - listar estudiantes con consentimiento activo
 router.get('/students', authenticateToken, async (req, res) => {
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     const requester = req.user;
 
     const [repRows] = await connection.execute('SELECT id FROM representatives WHERE user_id = ?', [requester.userId]);
@@ -151,7 +146,7 @@ router.get('/students/:studentId/progress', authenticateToken, async (req, res) 
   const requester = req.user;
 
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
 
     // Allow if requester is admin or teacher
     if (requester && (requester.role === 'admin' || requester.role === 'teacher' || requester.userId === studentId)) {
@@ -195,7 +190,7 @@ router.get('/students/:studentId/progress', authenticateToken, async (req, res) 
 // GET /api/representatives/requests - obtener solicitudes hechas por el requester (representante)
 router.get('/requests', authenticateToken, async (req, res) => {
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     const requester = req.user;
     // must be a representative user
     const [repRows] = await connection.execute('SELECT id FROM representatives WHERE user_id = ?', [requester.userId]);
@@ -223,7 +218,7 @@ router.get('/requests', authenticateToken, async (req, res) => {
 // GET /api/representatives/received - obtener solicitudes recibidas por el estudiante (pending/active)
 router.get('/received', authenticateToken, async (req, res) => {
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     const studentId = req.user.userId;
     const [rows] = await connection.execute(
       `SELECT c.id, c.representative_id, r.user_id as representative_user_id, u.name as representative_name, u.email as representative_email,
@@ -248,7 +243,7 @@ router.delete('/:repId/cancel', authenticateToken, async (req, res) => {
   const repIdParam = Number(req.params.repId);
   const requesterId = req.user.userId;
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await getConnection();
     // verify representative ownership
     const [repRows] = await connection.execute('SELECT id FROM representatives WHERE id = ? AND user_id = ?', [repIdParam, requesterId]);
     if (repRows.length === 0) {

@@ -5,6 +5,7 @@ import Toast from '../components/Toast';
 import ProgressModal from '../components/ProgressModal';
 import ConsentModal from '../components/ConsentModal';
 import ConfirmModal from '../components/ConfirmModal';
+import Button from '../components/ui/Button';
 
 export default function RepresentativeDashboard() {
   const { user } = useAuth();
@@ -167,90 +168,138 @@ export default function RepresentativeDashboard() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4">Representantes</h2>
-      {loading && <div>Cargando...</div>}
-      {error && <div className="text-red-600">{error}</div>}
+    <div className="page">
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <h2 className="section-title">Representantes</h2>
+            <p className="section-subtitle">Solicitudes, consentimientos y progreso.</p>
+          </div>
+          <span className="pill">{user?.role === 'student' ? 'Estudiante' : 'Representante'}</span>
+        </div>
 
-      {user && user.role === 'student' && (
-        <section>
-          <h3 className="font-medium">Solicitudes recibidas</h3>
-          {received.length === 0 && <p>No hay solicitudes.</p>}
-          <ul>
-            {received.map((r) => (
-              <li key={r.id} className="p-2 border-b flex justify-between items-center">
-                <div>
-                  <div>Representante: {r.representative_name || 'Sin nombre'}</div>
-                  <div className="text-sm text-gray-600">Email: {r.representative_email || 'N/A'}</div>
-                  <div className="text-sm text-gray-600">ID representante: {r.representative_id}</div>
-                  <div>Requested at: {new Date(r.requested_at).toLocaleString()}</div>
-                  <div>Active: {r.active ? 'Sí' : 'No'}</div>
-                </div>
-                <div className="flex gap-2">
-                  {!r.active ? (
-                    <button onClick={() => handleGrant(r.representative_id)} className="btn btn-primary">Conceder</button>
-                  ) : (
-                    <button onClick={() => handleRevoke(r.representative_id)} className="btn btn-secondary">Revocar</button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        {loading && <div className="muted" style={{ marginTop: 12 }}>Cargando...</div>}
+        {error && <div className="badge badge-danger" style={{ marginTop: 12 }}>{error}</div>}
 
-      {user && user.role !== 'student' && (
-        <section>
-          <h3 className="font-medium">Solicitar acceso como representante</h3>
-          <form onSubmit={handleCreateRequest} className="flex flex-wrap gap-2 items-end mb-4">
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-gray-600">ID de estudiante</span>
-              <input
-                value={requestStudentId}
-                onChange={(e) => setRequestStudentId(e.target.value)}
-                className="border rounded px-3 py-2"
-                placeholder="Ej: 123"
-              />
-            </label>
-            <button type="submit" className="btn btn-primary">Enviar solicitud</button>
-            {representativeId && (
-              <button type="button" onClick={() => handleCancel(representativeId)} className="btn btn-secondary">Cancelar pendientes</button>
+        {user && user.role === 'student' && (
+          <section style={{ marginTop: 16 }}>
+            <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Solicitudes recibidas</h3>
+            {received.length === 0 && <div className="muted">No hay solicitudes.</div>}
+            {received.length > 0 && (
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Representante</th>
+                      <th>Email</th>
+                      <th>Solicitado</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {received.map((r) => (
+                      <tr key={r.id}>
+                        <td style={{ fontWeight: 600 }}>{r.representative_name || 'Sin nombre'}</td>
+                        <td>{r.representative_email || 'N/A'}</td>
+                        <td className="muted">{new Date(r.requested_at).toLocaleString()}</td>
+                        <td>
+                          <span className={`badge ${r.active ? 'badge-success' : 'badge-warning'}`}>{r.active ? 'Activo' : 'Pendiente'}</span>
+                        </td>
+                        <td>
+                          {!r.active ? (
+                            <Button onClick={() => handleGrant(r.representative_id)} icon="✔">Conceder</Button>
+                          ) : (
+                            <Button variant="danger" onClick={() => handleRevoke(r.representative_id)} icon="✕">Revocar</Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </form>
+          </section>
+        )}
 
-          <h4 className="font-medium">Solicitudes realizadas</h4>
-          {requests.length === 0 && <p>No has realizado solicitudes.</p>}
-          <ul className="mb-6">
-            {requests.map((r) => (
-              <li key={r.id} className="p-2 border-b flex justify-between items-center">
-                <div>
-                  <div><strong>{r.student_name || ('Estudiante ' + r.student_id)}</strong></div>
-                  <div className="text-sm text-gray-600">Email: {r.student_email || 'N/A'}</div>
-                  <div className="text-sm text-gray-600">ID: {r.student_id}</div>
-                  <div className="text-sm">Estado: {r.active ? 'Activo' : 'Pendiente'}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
+        {user && user.role !== 'student' && (
+          <section style={{ marginTop: 16 }}>
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Solicitar acceso como representante</h3>
+              <form onSubmit={handleCreateRequest} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+                <label className="label" style={{ minWidth: 220 }}>ID de estudiante
+                  <input
+                    value={requestStudentId}
+                    onChange={(e) => setRequestStudentId(e.target.value)}
+                    className="input"
+                    placeholder="Ej: 123"
+                  />
+                </label>
+                <Button type="submit" icon="＋">Enviar solicitud</Button>
+                {representativeId && (
+                  <Button type="button" variant="ghost" onClick={() => handleCancel(representativeId)} icon="✕">Cancelar pendientes</Button>
+                )}
+              </form>
+            </div>
 
-          <h4 className="font-medium">Representados con consentimiento activo</h4>
-          {representativeStudents.length === 0 && <p>No tienes consentimientos activos.</p>}
-          <ul>
-            {representativeStudents.map((r) => (
-              <li key={r.student_id} className="p-2 border-b flex justify-between items-center">
-                <div>
-                  <div><strong>{r.name || ('Estudiante ' + r.student_id)}</strong></div>
-                  <div className="text-sm text-gray-600">Email: {r.email || 'N/A'}</div>
-                  <div className="text-sm text-gray-600">ID: {r.student_id}</div>
-                </div>
-                <div>
-                  <button onClick={() => viewProgress(r.student_id)} className="btn btn-secondary">Ver progreso</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+            <h4 style={{ fontWeight: 600, marginBottom: 8 }}>Solicitudes realizadas</h4>
+            {requests.length === 0 && <div className="muted" style={{ marginBottom: 12 }}>No has realizado solicitudes.</div>}
+            {requests.length > 0 && (
+              <div className="table-container" style={{ marginBottom: 16 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Estudiante</th>
+                      <th>Email</th>
+                      <th>ID</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requests.map((r) => (
+                      <tr key={r.id}>
+                        <td style={{ fontWeight: 600 }}>{r.student_name || ('Estudiante ' + r.student_id)}</td>
+                        <td>{r.student_email || 'N/A'}</td>
+                        <td>{r.student_id}</td>
+                        <td><span className={`badge ${r.active ? 'badge-success' : 'badge-warning'}`}>{r.active ? 'Activo' : 'Pendiente'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h4 style={{ fontWeight: 600, marginBottom: 8 }}>Representados con consentimiento activo</h4>
+            {representativeStudents.length === 0 && <div className="muted">No tienes consentimientos activos.</div>}
+            {representativeStudents.length > 0 && (
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Estudiante</th>
+                      <th>Email</th>
+                      <th>ID</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {representativeStudents.map((r) => (
+                      <tr key={r.student_id}>
+                        <td style={{ fontWeight: 600 }}>{r.name || ('Estudiante ' + r.student_id)}</td>
+                        <td>{r.email || 'N/A'}</td>
+                        <td>{r.student_id}</td>
+                        <td>
+                          <Button variant="secondary" onClick={() => viewProgress(r.student_id)} icon="📈">Ver progreso</Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
       <ProgressModal
         open={progressModal.open}
         onClose={() => setProgressModal({ open: false, studentId: null })}

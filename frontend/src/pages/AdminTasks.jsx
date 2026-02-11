@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
+import Button from '../components/ui/Button';
 
 const DEFAULT_TASKS = [
   { id: 'reindex_search', title: 'Reindexar search', desc: 'Reconstruir índices de búsqueda' },
@@ -53,28 +54,29 @@ export default function AdminTasks() {
   };
 
   return (
-    <div className="mt-6 bg-white rounded p-4 shadow">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium">Admin Tasks</h3>
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <button onClick={runSelected} disabled={running} className="px-3 py-1 bg-blue-600 text-white rounded">
-            {running ? <span className="flex items-center"><Spinner size={16} message=""/> Ejecutando...</span> : 'Ejecutar seleccionadas'}
-          </button>
+          <h3 style={{ fontWeight: 600 }}>Tareas administrativas</h3>
+          <div className="muted" style={{ fontSize: 12 }}>Ejecuta acciones de mantenimiento.</div>
         </div>
+        <Button onClick={runSelected} disabled={running}>
+          {running ? <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Spinner size={16} message=""/> Ejecutando...</span> : 'Ejecutar seleccionadas'}
+        </Button>
       </div>
 
-      <div className="mt-4 grid gap-3">
+      <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
         {tasks.map(t => (
-          <div key={t.id} className="flex items-center justify-between p-3 border rounded">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggle(t.id)} />
-              <div>
-                <div className="font-medium">{t.title}</div>
-                <div className="text-sm text-gray-600">{t.desc}</div>
-              </div>
-            </label>
-            <div>
-              <button disabled={running} onClick={() => runOne(t.id)} className="px-2 py-1 bg-gray-100 rounded text-sm">Run</button>
+          <div key={t.id} className="card" style={{ padding: 14, border: '1px solid var(--border)', boxShadow: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggle(t.id)} />
+                <div>
+                  <div style={{ fontWeight: 600 }}>{t.title}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>{t.desc}</div>
+                </div>
+              </label>
+              <Button variant="secondary" disabled={running} onClick={() => runOne(t.id)}>Ejecutar</Button>
             </div>
           </div>
         ))}

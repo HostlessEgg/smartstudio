@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import Button from './ui/Button';
 
 export default function ConsentModal({ open, onClose, onConfirm, studentId }) {
   const [expiresAt, setExpiresAt] = useState('');
@@ -24,12 +25,12 @@ export default function ConsentModal({ open, onClose, onConfirm, studentId }) {
         <div className="progress-modal-body">
           <p>Opcional: establece una fecha de expiración para el acceso del representante.</p>
           <div className="mt-2">
-            <label className="text-sm">Fecha de expiración</label>
-            <input type="date" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)} className="p-2 border block mt-1" />
+            <label className="label">Fecha de expiración</label>
+            <input type="date" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)} className="input" />
           </div>
           <div className="mt-4 flex gap-2">
-            <button ref={confirmRef} onClick={submit} className="btn btn-primary">Confirmar</button>
-            <button onClick={onClose} className="btn">Cancelar</button>
+            <Button ref={confirmRef} onClick={submit}>Confirmar</Button>
+            <Button variant="ghost" onClick={onClose}>Cancelar</Button>
           </div>
         </div>
       </div>

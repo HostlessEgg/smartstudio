@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import api from '../lib/api';
 import Toast from './Toast';
 
 export default function SubmissionBox({ assignmentId: initialAssignmentId = '', onSubmitted }) {
@@ -38,31 +39,41 @@ export default function SubmissionBox({ assignmentId: initialAssignmentId = '', 
 
     setLoading(true);
     try {
-      // If a file is selected, request presigned url and upload
       let finalFileUrl = fileUrl || null;
       if (selectedFile) {
-        // ask backend for presign or fallback
-        const presignRes = await axios.post('/api/uploads/presign', { filename: selectedFile.name, contentType: selectedFile.type });
-        if (presignRes.data && presignRes.data.uploadUrl) {
-          // upload using PUT
+        const presignRes = await api.post(
+          '/uploads/presign',
+          { filename: selectedFile.name, contentType: selectedFile.type }
+        );
+
+        if (presignRes.data?.uploadUrl) {
           await axios.put(presignRes.data.uploadUrl, selectedFile, { headers: { 'Content-Type': selectedFile.type } });
           finalFileUrl = presignRes.data.fileUrl;
-        } else if (presignRes.data && presignRes.data.fallback && presignRes.data.uploadEndpoint) {
-          // fallback: use form upload
+        } else if (presignRes.data?.fallback && presignRes.data?.uploadEndpoint) {
           const form = new FormData();
           form.append('file', selectedFile, selectedFile.name);
-          const uploadRes = await axios.post(presignRes.data.uploadEndpoint, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+          const uploadRes = await api.post(
+            presignRes.data.uploadEndpoint,
+            form,
+            { headers: { 'Content-Type': 'multipart/form-data' } }
+          );
           finalFileUrl = uploadRes.data.fileUrl;
         } else {
           throw new Error('No se pudo obtener URL de subida');
         }
       }
-      const res = await axios.post(`/api/assignments/${assignmentId}/submissions`, {
-        text_submission: text || null,
-        file_url: finalFileUrl || null
-      });
+
+      const res = await api.post(
+        `/assignments/${assignmentId}/submissions`,
+        {
+          text_submission: text || null,
+          file_url: finalFileUrl || null
+        }
+      );
+
       setToast({ message: 'Entrega enviada correctamente', type: 'success' });
-      setText(''); setFileUrl('');
+      setText('');
+      setFileUrl('');
       setSelectedFile(null);
       if (onSubmitted) onSubmitted(res.data);
     } catch (err) {
@@ -74,7 +85,7 @@ export default function SubmissionBox({ assignmentId: initialAssignmentId = '', 
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-4">
+    <div>
       <h4 className="font-semibold mb-2">Enviar entrega</h4>
       <form onSubmit={handleSubmit} className="space-y-2">
         <div>
@@ -88,7 +99,7 @@ export default function SubmissionBox({ assignmentId: initialAssignmentId = '', 
         <div>
           <label className="block text-sm">Adjuntar archivo (opcional)</label>
           <input type="file" onChange={e => setSelectedFile(e.target.files[0] || null)} className="border p-2 w-full" />
-          <div className="mt-2 text-sm text-gray-600">O pega una URL pública:</div>
+          <div className="mt-2 muted" style={{ fontSize: 12 }}>O pega una URL pública:</div>
           <input value={fileUrl} onChange={e => setFileUrl(e.target.value)} className="border p-2 w-full mt-1" placeholder="https://..." />
         </div>
         <div className="flex justify-end">

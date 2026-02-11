@@ -2,13 +2,13 @@ import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
-const api = axios.create({ baseURL });
+const api = axios.create({ baseURL, withCredentials: true });
 
-// Attach token from localStorage on each request
+// Attach CSRF token from sessionStorage on each request
 api.interceptors.request.use(cfg => {
   try {
-    const token = localStorage.getItem('token');
-    if (token) cfg.headers = { ...(cfg.headers || {}), Authorization: `Bearer ${token}` };
+    const csrfToken = sessionStorage.getItem('csrfToken');
+    if (csrfToken) cfg.headers = { ...(cfg.headers || {}), 'X-CSRF-Token': csrfToken };
   } catch (err) {
     // ignore
   }
